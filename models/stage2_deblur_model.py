@@ -150,7 +150,11 @@ class MotionGuidedDeblurNet(nn.Module):
         _, _, h, w = blur.shape
 
         blur = self.check_image_size(blur)
-        motion = self.check_image_size(motion)
+        motion = self.check_motion_size(
+            motion,
+            target_h=blur.shape[-2] // 2,
+            target_w=blur.shape[-1] // 2,
+        )
 
         x = self.intro(blur)
         motion_feat = self.intro_motion(motion)
@@ -209,6 +213,20 @@ class MotionGuidedDeblurNet(nn.Module):
 
         x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h))
         return x
+
+    def check_motion_size(self, motion, target_h, target_w):
+        _, _, h, w = motion.size()
+        if h > target_h or w > target_w:
+            raise ValueError(
+                "motion must be half-resolution relative to padded blur. "
+                f"got motion={(h, w)}, expected at most={(target_h, target_w)}"
+            )
+
+        pad_h = target_h - h
+        pad_w = target_w - w
+        if pad_h or pad_w:
+            motion = F.pad(motion, (0, pad_w, 0, pad_h))
+        return motion
 
 
 def _model_config(args):
@@ -283,6 +301,5 @@ if __name__ == "__main__":
 
     print("params:", sum(p.numel() for p in net.parameters()))
     print("out:", out.shape)
-
 
 
