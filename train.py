@@ -283,7 +283,6 @@ def main():
                     )
                     save_checkpoint(state, run_dir, "latest.pt")
                     if is_best:
-                        save_checkpoint(state, run_dir, "best_psnr.pt")
                         save_checkpoint(state, run_dir, "best.pt")
                         save_best_metrics(run_dir, current_iteration, val_metrics)
                         logger.info(f"saved best checkpoint | psnr={best_val_psnr:.6f}")
