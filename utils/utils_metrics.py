@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
 
 
 def batch_psnr(pred, target, eps=1e-8):
@@ -28,27 +29,42 @@ def batch_ssim(pred, target, window_size=11, eps=1e-8):
     return ssim.mean()
 
 
+def _validation_total(loader, max_batches):
+    total = len(loader)
+    if max_batches is not None:
+        total = min(total, int(max_batches))
+    return total
+
+
 @torch.no_grad()
-def evaluate_model(model, loader, criterion, device, epoch=0, max_batches=None):
+def evaluate_model(
+    model,
+    loader,
+    criterion,
+    device,
+    epoch=0,
+    max_batches=None,
+    show_progress=False,
+):
     was_training = model.training
     model.eval()
 
     total = {"loss": 0.0, "psnr": 0.0, "ssim": 0.0}
     count = 0
-    for batch_idx, batch in enumerate(loader):
+    batches = tqdm(
+        loader,
+        total=_validation_total(loader, max_batches),
+        desc="val",
+        leave=False,
+        disable=not show_progress,
+    )
+    for batch_idx, batch in enumerate(batches):
         if max_batches is not None and batch_idx >= int(max_batches):
             break
 
         blur = batch["lq"].to(device, non_blocking=True).float()
         sharp = batch["gt"].to(device, non_blocking=True).float()
         motion_field = batch["motion_field"].to(device, non_blocking=True).float()
-        if motion_field.shape[-2:] != blur.shape[-2:]:
-            motion_field = F.interpolate(
-                motion_field,
-                size=blur.shape[-2:],
-                mode="bilinear",
-                align_corners=False,
-            )
         pred = model(blur, motion_field)
         loss = criterion(pred, sharp)
         batch_size = blur.shape[0]
@@ -57,6 +73,8 @@ def evaluate_model(model, loader, criterion, device, epoch=0, max_batches=None):
         total["psnr"] += float(batch_psnr(pred, sharp).detach().cpu()) * batch_size
         total["ssim"] += float(batch_ssim(pred, sharp).detach().cpu()) * batch_size
         count += batch_size
+        if show_progress:
+            batches.set_postfix(loss=total["loss"] / count, psnr=total["psnr"] / count)
 
     if was_training:
         model.train()

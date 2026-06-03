@@ -139,7 +139,12 @@ def main():
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device.index])
     criterion = build_criterion(cfg["train"].get("loss", "psnr")).to(device)
     optimizer = build_optimizer(cfg, model.parameters())
-    scheduler = build_scheduler(cfg, optimizer, total_iterations=total_iterations)
+    scheduler = build_scheduler(
+        cfg,
+        optimizer,
+        total_iterations=total_iterations,
+        total_epochs=epochs,
+    )
 
     start_iteration = 0
     best_val_psnr = -math.inf
@@ -174,6 +179,7 @@ def main():
         if sampler:
             sampler.set_epoch(epoch)
         model.train()
+        epoch_had_update = False
 
         for batch_idx, batch in enumerate(loader):
             if epoch == start_epoch and batch_idx < first_epoch_offset:
@@ -187,21 +193,13 @@ def main():
             blur = batch["lq"].to(device, non_blocking=True).float()
             sharp = batch["gt"].to(device, non_blocking=True).float()
             motion_field = batch["motion_field"].to(device, non_blocking=True).float()
-            if motion_field.shape[-2:] != blur.shape[-2:]:
-                motion_field = torch.nn.functional.interpolate(
-                    motion_field,
-                    size=blur.shape[-2:],
-                    mode="bilinear",
-                    align_corners=False,
-                )
             optimizer.zero_grad(set_to_none=True)
 
             pred = model(blur, motion_field)
             loss = criterion(pred, sharp)
             loss.backward()
             optimizer.step()
-            if scheduler is not None:
-                scheduler.step()
+            epoch_had_update = True
 
             progress.update(1)
             recent_losses.append(float(loss.detach().cpu()))
@@ -257,6 +255,7 @@ def main():
                     device,
                     epoch=current_epoch,
                     max_batches=max_val_batches,
+                    show_progress=is_main_process(),
                 )
                 if is_main_process():
                     append_history(history, "val", current_iteration, val_metrics)
@@ -309,6 +308,8 @@ def main():
                 logger.info(f"saved latest checkpoint | iter={current_iteration}")
 
         first_epoch_offset = 0
+        if scheduler is not None and epoch_had_update:
+            scheduler.step()
         if current_iteration >= total_iterations:
             break
 

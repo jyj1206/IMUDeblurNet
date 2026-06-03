@@ -32,7 +32,7 @@ class MotionGuidedDeblurNet(nn.Module):
 
         self.intro_motion = nn.Conv2d(
             in_channels=motion_channel,
-            out_channels=width,
+            out_channels=width * 2,
             kernel_size=3,
             padding=1,
             stride=1,
@@ -63,19 +63,22 @@ class MotionGuidedDeblurNet(nn.Module):
         # -------------------------
         chan = width
 
-        for num_blocks in enc_blk_nums:
+        for idx, num_blocks in enumerate(enc_blk_nums):
             self.encoders.append(
                 nn.Sequential(
                     *[NAFBlock(chan) for _ in range(num_blocks)]
                 )
             )
 
-            self.motion_refine_blks.append(
-                MotionRefinementBlock(
-                    motion_channels=chan,
-                    blur_channels=chan,
+            if idx == 0:
+                self.motion_refine_blks.append(nn.Identity())
+            else:
+                self.motion_refine_blks.append(
+                    MotionRefinementBlock(
+                        motion_channels=chan,
+                        blur_channels=chan,
+                    )
                 )
-            )
 
             self.downs.append(
                 nn.Conv2d(
@@ -157,15 +160,16 @@ class MotionGuidedDeblurNet(nn.Module):
         # -------------------------
         # Encoder
         # -------------------------
-        for encoder, down, motion_refine_blk in zip(
+        for idx, (encoder, down, motion_refine_blk) in enumerate(zip(
             self.encoders,
             self.downs,
             self.motion_refine_blks,
-        ):
+        )):
             x = encoder(x)
             encs.append(x)
 
-            motion_feat = motion_refine_blk(x, motion_feat)
+            if idx != 0:
+                motion_feat = motion_refine_blk(x, motion_feat)
             x = down(x)
 
         # -------------------------
@@ -273,13 +277,12 @@ if __name__ == "__main__":
     ).cuda()
 
     blur = torch.randn(1, 3, 256, 256).cuda()
-    motion = torch.randn(1, motion_channel, 256, 256).cuda()
+    motion = torch.randn(1, motion_channel, 128, 128).cuda()
 
     out = net(blur, motion)
 
     print("params:", sum(p.numel() for p in net.parameters()))
     print("out:", out.shape)
-
 
 
 

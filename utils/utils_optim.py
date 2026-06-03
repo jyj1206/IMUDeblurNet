@@ -17,8 +17,9 @@ def build_optimizer(config, parameters):
     raise ValueError(f"Unknown optimizer.name: {name}")
 
 
-def build_scheduler(config, optimizer, total_iterations=None):
+def build_scheduler(config, optimizer, total_iterations=None, total_epochs=None):
     scheduler_cfg = config.get("scheduler", {})
+    train_cfg = config.get("train", {})
     name = scheduler_cfg.get("name", "cosine").lower()
 
     if name in ("none", "null"):
@@ -26,9 +27,11 @@ def build_scheduler(config, optimizer, total_iterations=None):
     if name == "cosine":
         t_max = int(
             scheduler_cfg.get("t_max")
+            or total_epochs
+            or train_cfg.get("epochs")
             or total_iterations
-            or config.get("train", {}).get("total_iterations")
-            or config.get("train", {}).get("epochs", 50)
+            or train_cfg.get("total_iterations")
+            or 50
         )
         eta_min = float(scheduler_cfg.get("eta_min", 1e-7))
         return torch.optim.lr_scheduler.CosineAnnealingLR(
