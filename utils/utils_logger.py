@@ -2,10 +2,15 @@ import logging
 from pathlib import Path
 
 
-def build_logger(name, log_file=None):
+def build_logger(name, log_file=None, enabled=True):
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
+    logger.propagate = False
+    logger.disabled = not enabled
+
+    if not enabled:
+        return logger
 
     formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
     stream_handler = logging.StreamHandler()

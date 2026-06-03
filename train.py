@@ -41,6 +41,18 @@ def parse_args():
     return parser.parse_args()
 
 
+def sync_run_state(run_dir, resume_checkpoint, distributed):
+    if not distributed:
+        return run_dir, resume_checkpoint
+
+    payload = [
+        str(run_dir) if is_main_process() else None,
+        str(resume_checkpoint) if is_main_process() and resume_checkpoint else None,
+    ]
+    torch.distributed.broadcast_object_list(payload, src=0)
+    return Path(payload[0]), Path(payload[1]) if payload[1] else None
+
+
 def main():
     args = parse_args()
     cfg = normalize_config(load_config(args.config))
@@ -50,12 +62,17 @@ def main():
         cfg = normalize_config(load_config(Path(resume) / "config.yaml"))
         cfg.setdefault("train", {})["resume"] = resume
 
-    run_dir, resume_checkpoint = prepare_run_dir(cfg, resume)
     device, distributed = init_distributed(cfg.get("distributed", {}))
+    run_dir, resume_checkpoint = prepare_run_dir(cfg, resume)
+    run_dir, resume_checkpoint = sync_run_state(run_dir, resume_checkpoint, distributed)
 
     if is_main_process():
         run_dir.mkdir(parents=True, exist_ok=True)
-    logger = build_logger(cfg["experiment"]["name"], run_dir / "train.log" if is_main_process() else None)
+    logger = build_logger(
+        cfg["experiment"]["name"],
+        run_dir / "train.log" if is_main_process() else None,
+        enabled=is_main_process(),
+    )
     logger.info(f"run_dir={run_dir}")
     logger.info(f"device={device}, distributed={distributed}")
 
