@@ -3,14 +3,18 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 
-def batch_psnr(pred, target, eps=1e-8):
+def sample_psnr(pred, target, eps=1e-8):
     pred = pred.clamp(0.0, 1.0)
     target = target.clamp(0.0, 1.0)
     mse = ((pred - target) ** 2).flatten(1).mean(dim=1)
-    return (10.0 * torch.log10(1.0 / (mse + eps))).mean()
+    return 10.0 * torch.log10(1.0 / (mse + eps))
 
 
-def batch_ssim(pred, target, window_size=11, eps=1e-8):
+def batch_psnr(pred, target, eps=1e-8):
+    return sample_psnr(pred, target, eps=eps).mean()
+
+
+def sample_ssim(pred, target, window_size=11, eps=1e-8):
     pred = pred.clamp(0.0, 1.0)
     target = target.clamp(0.0, 1.0)
     padding = window_size // 2
@@ -26,7 +30,11 @@ def batch_ssim(pred, target, window_size=11, eps=1e-8):
     ssim = ((2 * mu_x * mu_y + c1) * (2 * sigma_xy + c2)) / (
         (mu_x * mu_x + mu_y * mu_y + c1) * (sigma_x + sigma_y + c2) + eps
     )
-    return ssim.mean()
+    return ssim.flatten(1).mean(dim=1)
+
+
+def batch_ssim(pred, target, window_size=11, eps=1e-8):
+    return sample_ssim(pred, target, window_size=window_size, eps=eps).mean()
 
 
 def _validation_total(loader, max_batches):

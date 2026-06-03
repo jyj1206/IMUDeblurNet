@@ -1,4 +1,8 @@
 import math
+import random
+
+import numpy as np
+import torch
 
 
 def resolve_training_length(config, steps_per_epoch):
@@ -24,3 +28,14 @@ def interval_due(iteration, interval):
         return False
     interval = int(interval)
     return interval > 0 and iteration % interval == 0
+
+
+def set_seed(seed):
+    if seed is None:
+        return
+    seed = int(seed)
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)

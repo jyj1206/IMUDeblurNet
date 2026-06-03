@@ -15,10 +15,10 @@ from .utils_dist import (
 )
 from .utils_loss import PSNRLoss, build_criterion
 from .utils_logger import build_logger
-from .utils_metrics import batch_psnr, batch_ssim, evaluate_model
+from .utils_metrics import batch_psnr, batch_ssim, evaluate_model, sample_psnr, sample_ssim
 from .utils_optim import build_optimizer, build_scheduler
 from .utils_plot import append_history, save_history
-from .utils_train import interval_due, resolve_training_length
+from .utils_train import interval_due, resolve_training_length, set_seed
 from .utils_yaml import load_config, save_config
 
 __all__ = [
@@ -46,5 +46,8 @@ __all__ = [
     "save_checkpoint",
     "save_config",
     "save_history",
+    "sample_psnr",
+    "sample_ssim",
+    "set_seed",
     "unwrap_model",
 ]

@@ -73,6 +73,18 @@ class MotionFieldPairedImageDataset(Dataset):
         motion_name = f"{Path(blur_path).stem}.{self.motion_field_ext}"
         return self.motion_field_root / self.split / self.motion_field_dir / scene_dir / motion_name
 
+    def _sample_meta(self, index, row, lq_path, gt_path):
+        motion_path = self._motion_field_path(row)
+        return {
+            "index": int(index),
+            "type": row.get("type", "unknown"),
+            "scene_dir": row.get("scene_dir", ""),
+            "stem": Path(lq_path).stem,
+            "lq_path": str(lq_path),
+            "gt_path": str(gt_path),
+            "motion_field_path": str(motion_path),
+        }
+
     def _load_motion_field(self, row):
         path = self._motion_field_path(row)
         if not path.exists():
@@ -121,6 +133,7 @@ class MotionFieldPairedImageDataset(Dataset):
             "lq": lq,
             "gt": gt,
             "motion_field": motion_field,
+            "meta": self._sample_meta(index, row, lq_path, gt_path),
         }
 
 
