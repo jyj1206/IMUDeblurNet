@@ -108,6 +108,7 @@ def rebuild_split(dataset_root, split, metadata_name, apply, remove_triplets):
             "rows": 0,
             "scenes": 0,
             "metadata_path": str(split_root / metadata_name),
+            "triplet_files": 0,
             "removed_triplets": 0,
         }
 
@@ -124,6 +125,7 @@ def rebuild_split(dataset_root, split, metadata_name, apply, remove_triplets):
         "rows": len(rows),
         "scenes": len(scene_dirs(split_root)),
         "metadata_path": str(metadata_path),
+        "triplet_files": len(triplet_paths),
         "removed_triplets": len(triplet_paths) if remove_triplets else 0,
     }
 
@@ -138,26 +140,36 @@ def main():
     parser.add_argument("--dataset-root", type=Path, default=Path("data/IMUBlur"))
     parser.add_argument("--splits", nargs="+", default=["train", "val", "test"])
     parser.add_argument("--metadata-name", default="metadata.csv")
-    parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview rebuild results without rewriting metadata.csv.",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Deprecated compatibility flag. Rebuilds are applied by default unless --dry-run is set.",
+    )
     parser.add_argument(
         "--remove-triplets",
         action="store_true",
-        help="Delete scene_*/triplets.csv after rebuilding metadata. Only active with --apply.",
+        help="Delete scene_*/triplets.csv after rebuilding metadata.",
     )
     args = parser.parse_args()
+    apply_changes = not args.dry_run
 
     results = [
         rebuild_split(
             dataset_root=args.dataset_root,
             split=split,
             metadata_name=args.metadata_name,
-            apply=args.apply,
+            apply=apply_changes,
             remove_triplets=args.remove_triplets,
         )
         for split in args.splits
     ]
 
-    action = "wrote" if args.apply else "would_write"
+    action = "wrote" if apply_changes else "would_write"
     for result in results:
         if not result["exists"]:
             print(f"{result['split']}: missing split")
@@ -167,11 +179,16 @@ def main():
             f"from {result['scenes']} scenes -> {result['metadata_path']}"
         )
         if args.remove_triplets:
-            removed_action = "removed" if args.apply else "would_remove"
+            removed_action = "removed" if apply_changes else "would_remove"
             print(f"  {removed_action} triplets.csv files: {result['removed_triplets']}")
+        elif result["triplet_files"]:
+            print(
+                f"  kept triplets.csv files: {result['triplet_files']} "
+                "(use --remove-triplets to delete them)"
+            )
 
-    if not args.apply:
-        print("dry-run only. Add --apply to rewrite metadata.csv.")
+    if not apply_changes:
+        print("dry-run only. Run without --dry-run to rewrite metadata.csv.")
 
 
 if __name__ == "__main__":
