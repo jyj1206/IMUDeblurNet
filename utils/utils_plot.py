@@ -23,7 +23,12 @@ def _save_history_json(history, path):
 
 
 def _save_history_csv(history, path):
-    fields = ["split", "iteration", "loss", "psnr", "ssim"]
+    metric_fields = []
+    for row in history:
+        for key in row:
+            if key not in {"split", "iteration"} and key not in metric_fields:
+                metric_fields.append(key)
+    fields = ["split", "iteration", *metric_fields]
     with Path(path).open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fields)
         writer.writeheader()
@@ -40,8 +45,18 @@ def _plot_history(history, path):
     train = [row for row in history if row["split"] == "train"]
     val = [row for row in history if row["split"] == "val"]
 
-    fig, axes = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
-    for axis, metric in zip(axes, ["loss", "psnr", "ssim"]):
+    metrics = []
+    for row in history:
+        for key in row:
+            if key not in {"split", "iteration"} and key not in metrics:
+                metrics.append(key)
+    if not metrics:
+        return
+
+    fig, axes = plt.subplots(len(metrics), 1, figsize=(10, 4 * len(metrics)), sharex=True)
+    if len(metrics) == 1:
+        axes = [axes]
+    for axis, metric in zip(axes, metrics):
         for split, rows in [("train", train), ("val", val)]:
             rows = [row for row in rows if metric in row]
             if rows:

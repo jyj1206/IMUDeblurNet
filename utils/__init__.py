@@ -6,7 +6,13 @@ from .utils_checkpoint import (
     save_checkpoint,
 )
 from .utils_config import normalize_config
-from .utils_dist import cleanup_distributed, init_distributed, is_main_process, unwrap_model
+from .utils_dist import (
+    cleanup_distributed,
+    init_distributed,
+    is_main_process,
+    reduce_mean_tensor,
+    unwrap_model,
+)
 from .utils_loss import PSNRLoss, build_criterion
 from .utils_logger import build_logger
 from .utils_metrics import batch_psnr, batch_ssim, evaluate_model
@@ -35,6 +41,7 @@ __all__ = [
     "load_checkpoint_state",
     "normalize_config",
     "prepare_run_dir",
+    "reduce_mean_tensor",
     "resolve_training_length",
     "save_checkpoint",
     "save_config",

@@ -43,5 +43,14 @@ def is_main_process():
     return torch.distributed.get_rank() == 0
 
 
+def reduce_mean_tensor(tensor):
+    if not torch.distributed.is_available() or not torch.distributed.is_initialized():
+        return tensor
+    tensor = tensor.detach().clone()
+    torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.SUM)
+    tensor /= torch.distributed.get_world_size()
+    return tensor
+
+
 def unwrap_model(model):
     return model.module if hasattr(model, "module") else model

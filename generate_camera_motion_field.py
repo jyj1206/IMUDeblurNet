@@ -118,6 +118,16 @@ def output_path(save_root_dir, mode, scene_dir, blur_path, save_format):
     return save_root_dir / mode / "camera_motion_field" / scene_dir / f"{Path(blur_path).stem}.{save_format}"
 
 
+def row_blur_path(row):
+    if row.get("blur_path"):
+        return row["blur_path"]
+    return row["center_blur_path"]
+
+
+def row_sensor_idx(row):
+    return int(row.get("sensor_idx") or row.get("center_sensor_idx") or 0)
+
+
 def save_motion_field(path, motion_field, dtype, save_format):
     path.parent.mkdir(parents=True, exist_ok=True)
     motion_field = motion_field.astype(dtype)
@@ -136,12 +146,13 @@ def generate_camera_motion_field(row, mode, data_root, save_root_dir, center_vec
     split_root = data_root / mode
     scene_dir = row["scene_dir"]
     scene_root = split_root / scene_dir
-    save_file = output_path(save_root_dir, mode, scene_dir, row["center_blur_path"], args.save_format)
+    blur_path = row_blur_path(row)
+    save_file = output_path(save_root_dir, mode, scene_dir, blur_path, args.save_format)
 
     if save_file.exists() and not args.overwrite:
         return False
 
-    blur_file = scene_root / row["center_blur_path"]
+    blur_file = scene_root / blur_path
     sensor_file = scene_root / "sensor_windows.npy"
     timestamp_file = scene_root / "sensor_timestamps.npy"
     missing_files = [path for path in (scene_root, blur_file, sensor_file, timestamp_file) if not path.exists()]
@@ -155,7 +166,7 @@ def generate_camera_motion_field(row, mode, data_root, save_root_dir, center_vec
     if cache_key not in center_vector_cache:
         center_vector_cache[cache_key] = build_center_vectors(height, width, args.downsample)
 
-    sensor_idx = int(row.get("center_sensor_idx", row.get("sensor_idx", 0)))
+    sensor_idx = row_sensor_idx(row)
     if scene_cache is not None:
         if scene_dir not in scene_cache:
             scene_cache[scene_dir] = (

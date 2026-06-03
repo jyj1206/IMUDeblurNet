@@ -1,5 +1,6 @@
 import argparse
 import math
+import time
 from pathlib import Path
 
 import torch
@@ -26,6 +27,7 @@ from utils import (
     load_config,
     normalize_config,
     prepare_run_dir,
+    reduce_mean_tensor,
     resolve_training_length,
     save_checkpoint,
     save_config,
@@ -51,6 +53,12 @@ def sync_run_state(run_dir, resume_checkpoint, distributed):
     ]
     torch.distributed.broadcast_object_list(payload, src=0)
     return Path(payload[0]), Path(payload[1]) if payload[1] else None
+
+
+def distributed_world_size(distributed):
+    if distributed and torch.distributed.is_available() and torch.distributed.is_initialized():
+        return torch.distributed.get_world_size()
+    return 1
 
 
 def main():
@@ -102,6 +110,17 @@ def main():
         f"train_samples={len(train_dataset)}, steps_per_epoch={len(loader)}, "
         f"epochs={epochs}, total_iterations={total_iterations}"
     )
+    logger.info(
+        "stage2 train | "
+        f"samples={len(train_dataset)} val_enabled={validation_cfg.get('enabled', True)} "
+        f"batch_per_gpu={cfg['dataset'].get('batch_size', 4)} "
+        f"effective_batch={int(cfg['dataset'].get('batch_size', 4)) * distributed_world_size(distributed)} "
+        f"workers={cfg['dataset'].get('num_workers', 0)} "
+        f"patch={cfg['dataset'].get('patch_size', 256)} "
+        f"loss={cfg['train'].get('loss', 'psnr')} "
+        f"model={cfg['model'].get('name', 'motion_field_deblur')} "
+        f"distributed={distributed} world_size={distributed_world_size(distributed)}"
+    )
 
     model = build_model(cfg).to(device)
     if distributed:
@@ -131,6 +150,7 @@ def main():
     start_epoch = current_iteration // len(loader)
     first_epoch_offset = current_iteration % len(loader)
     recent_losses = []
+    last_log_time = time.time()
     progress = tqdm(
         total=total_iterations,
         initial=current_iteration,
@@ -166,15 +186,36 @@ def main():
 
             recent_losses.append(float(loss.detach().cpu()))
             if interval_due(current_iteration, log_interval) or current_iteration == total_iterations:
+                loss_log = float(
+                    reduce_mean_tensor(loss.detach()).detach().cpu()
+                )
+                psnr_log = float(
+                    reduce_mean_tensor(batch_psnr(pred.detach(), sharp.detach())).detach().cpu()
+                )
+                ssim_log = float(
+                    reduce_mean_tensor(batch_ssim(pred.detach(), sharp.detach())).detach().cpu()
+                )
+                lr = optimizer.param_groups[0]["lr"]
                 train_metrics = {
-                    "loss": sum(recent_losses) / len(recent_losses),
-                    "psnr": float(batch_psnr(pred.detach(), sharp.detach()).detach().cpu()),
-                    "ssim": float(batch_ssim(pred.detach(), sharp.detach()).detach().cpu()),
+                    "loss": loss_log,
+                    "psnr": psnr_log,
+                    "ssim": ssim_log,
+                    "lr": float(lr),
                 }
                 recent_losses.clear()
                 if is_main_process():
                     append_history(history, "train", current_iteration, train_metrics)
                     progress.set_postfix(train_loss=train_metrics["loss"])
+                    elapsed = time.time() - last_log_time
+                    last_log_time = time.time()
+                    logger.info(
+                        f"train iter={current_iteration}/{total_iterations} "
+                        f"loss={train_metrics['loss']:.6f} "
+                        f"psnr={train_metrics['psnr']:.4f} "
+                        f"ssim={train_metrics['ssim']:.6f} "
+                        f"lr={lr:.6e} elapsed={elapsed:.1f}s"
+                    )
+                    save_history(history, run_dir)
 
             if val_loader is not None and (
                 interval_due(current_iteration, validation_interval)
@@ -196,6 +237,7 @@ def main():
                         f"val_psnr={val_metrics['psnr']:.4f} "
                         f"val_ssim={val_metrics['ssim']:.4f}"
                     )
+                    save_history(history, run_dir)
                     if val_metrics["psnr"] > best_val_psnr:
                         best_val_psnr = val_metrics["psnr"]
                         state = build_checkpoint_state(

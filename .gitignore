@@ -27,8 +27,7 @@ Desktop.ini
 *.log
 *.tmp
 *.temp
-runs/*
-!runs/.gitkeep
+runs/
 result/*
 !result/.gitkeep
 wandb/
