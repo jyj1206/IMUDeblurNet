@@ -50,4 +50,5 @@ scheduler:
   eta_min: 0.0000001
 
 distributed:
-  enabled: false
+  enabled: true
+  backend: auto

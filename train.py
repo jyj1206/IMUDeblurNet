@@ -51,7 +51,7 @@ def main():
         cfg.setdefault("train", {})["resume"] = resume
 
     run_dir, resume_checkpoint = prepare_run_dir(cfg, resume)
-    device, distributed = init_distributed(cfg.get("distributed", {}).get("enabled", False))
+    device, distributed = init_distributed(cfg.get("distributed", {}))
 
     if is_main_process():
         run_dir.mkdir(parents=True, exist_ok=True)
