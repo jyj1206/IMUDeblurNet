@@ -1,0 +1,85 @@
+﻿# Python caches and local tooling
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Virtual environments and package build outputs
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+
+# Logs, temp files, and experiment outputs
+*.log
+*.tmp
+*.temp
+runs/*
+!runs/.gitkeep
+result/*
+!result/.gitkeep
+wandb/
+mlruns/
+lightning_logs/
+tensorboard/
+
+# Local raw data. Keep only the folder placeholder.
+data/*
+!data/.gitkeep
+
+# External model repos/clones under models.
+# Keep local project code such as models/modules.
+models/GyroDeblurNet/
+models/image-as-an-imu/
+models/*/.git/
+models/.cache/
+!models/.gitkeep
+
+# Model/checkpoint artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.safetensors
+*.h5
+*.pb
+*.tflite
+
+# Raw/generated media and array artifacts
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.avi
+*.mkv
+*.png
+*.jpg
+*.jpeg
+*.bmp
+*.tif
+*.tiff
+*.npy
+*.npz
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Local conversion markers/backups
+*.body_axes_backup
+*.opencv_axes_done.txt
+frame_sensors_axis_correction.json

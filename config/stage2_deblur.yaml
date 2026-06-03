@@ -1,0 +1,53 @@
+paths:
+  dataset_root: data/IMUBlur
+  log_root: result
+  run_name: stage2_motion_field_deblur
+  run_prefix: run
+  output_dir: null
+  resume: null
+
+data:
+  train_split: train
+  val_split: val
+  metadata_name: metadata.csv
+  patch_size: 256
+  batch_size: 4
+  val_batch_size: 4
+  num_workers: 8
+  val_workers: 4
+  use_validation: true
+  val_max_batches: null
+
+motion_field:
+  root: null
+  dir: camera_motion_field
+  ext: npy
+  downsample: 2
+
+train:
+  total_iters: 400000
+  epochs: null
+  loss: psnr
+  val_every: 1000
+  save_every: 5000
+  log_every: 200
+
+model:
+  name: motion_field_deblur
+  motion_channels: 12
+  width: 32
+  num_blocks: 4
+
+optimizer:
+  name: adam
+  lr: 0.0001
+  betas: [0.9, 0.999]
+  weight_decay: 0.0
+
+scheduler:
+  name: cosine
+  t_max: null
+  eta_min: 0.0000001
+
+distributed:
+  enabled: false
