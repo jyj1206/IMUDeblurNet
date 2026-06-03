@@ -18,6 +18,13 @@ from .utils_logger import build_logger
 from .utils_metrics import batch_psnr, batch_ssim, evaluate_model, sample_psnr, sample_ssim
 from .utils_optim import build_optimizer, build_scheduler
 from .utils_plot import append_history, save_history
+from .utils_stage_pipeline import (
+    build_stage1_stage2_loader,
+    load_stage1_stage2_models,
+    predicted_v_to_motion_field,
+    resolve_device,
+    run_stage1_stage2_batch,
+)
 from .utils_train import interval_due, resolve_training_length, set_seed
 from .utils_yaml import load_config, save_config
 
@@ -31,6 +38,7 @@ __all__ = [
     "build_criterion",
     "build_optimizer",
     "build_scheduler",
+    "build_stage1_stage2_loader",
     "checkpoint_iteration",
     "cleanup_distributed",
     "evaluate_model",
@@ -39,10 +47,14 @@ __all__ = [
     "is_main_process",
     "load_config",
     "load_checkpoint_state",
+    "load_stage1_stage2_models",
     "normalize_config",
     "prepare_run_dir",
+    "predicted_v_to_motion_field",
     "reduce_mean_tensor",
+    "resolve_device",
     "resolve_training_length",
+    "run_stage1_stage2_batch",
     "save_checkpoint",
     "save_config",
     "save_history",
