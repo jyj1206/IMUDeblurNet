@@ -2,9 +2,9 @@
 # Values under model.args are passed to models/stage2_deblur_model.py::build_model.
 
 experiment:
-  name: stage2_motion_field_deblur
+  name: stage2_deblur_training
   result_root: result
-  run_prefix: run
+  run_prefix: stage2
   output_dir: null
 
 dataset:
