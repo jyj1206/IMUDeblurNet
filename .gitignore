@@ -49,6 +49,8 @@ models/.cache/
 !models/.gitkeep
 
 # Model/checkpoint artifacts
+weights/*
+!weights/.gitkeep
 *.pt
 *.pth
 *.ckpt
