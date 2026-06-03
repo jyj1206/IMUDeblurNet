@@ -1,94 +1,285 @@
 import torch
-from torch import nn
+import torch.nn as nn
 import torch.nn.functional as F
 
+from .modules.nafblock import NAFBlock
+from .modules.motion_guided_block import (
+    MotionGuidedDeblurringBlock,
+    MotionRefinementBlock,
+)
 
-class ResBlock(nn.Module):
-    def __init__(self, channels):
+
+class MotionGuidedDeblurNet(nn.Module):
+    def __init__(
+        self,
+        img_channel=3,
+        motion_channel=16,
+        width=32,
+        middle_blk_num=16,
+        enc_blk_nums=(2, 2, 2),
+        dec_blk_nums=(1, 1, 1),
+    ):
         super().__init__()
-        self.body = nn.Sequential(
-            nn.Conv2d(channels, channels, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(channels, channels, 3, padding=1),
+
+        self.intro = nn.Conv2d(
+            in_channels=img_channel,
+            out_channels=width,
+            kernel_size=3,
+            padding=1,
+            stride=1,
+            bias=True,
         )
 
-    def forward(self, x):
-        return x + self.body(x)
-
-
-class ImageOnlyDeblurNet(nn.Module):
-    def __init__(self, width=32, num_blocks=4):
-        super().__init__()
-        self.head = nn.Conv2d(3, width, 3, padding=1)
-        self.body = nn.Sequential(*[ResBlock(width) for _ in range(num_blocks)])
-        self.tail = nn.Conv2d(width, 3, 3, padding=1)
-
-    def forward(self, blur, motion_field=None, epoch=0):
-        feat = self.body(self.head(blur))
-        return blur + self.tail(feat)
-
-
-class MotionFieldDeblurNet(nn.Module):
-    def __init__(self, motion_channels=12, width=32, num_blocks=4):
-        super().__init__()
-        self.img_head = nn.Conv2d(3, width, 3, padding=1)
-        self.img_enc = nn.Sequential(*[ResBlock(width) for _ in range(num_blocks)])
-        self.down1 = nn.Conv2d(width, width * 2, 3, stride=2, padding=1)
-
-        self.motion_head = nn.Sequential(
-            nn.Conv2d(motion_channels, width * 2, 3, padding=1),
-            nn.ReLU(inplace=True),
-            ResBlock(width * 2),
+        self.intro_motion = nn.Conv2d(
+            in_channels=motion_channel,
+            out_channels=width,
+            kernel_size=3,
+            padding=1,
+            stride=1,
+            bias=True,
         )
-        self.fuse = nn.Conv2d(width * 4, width * 2, 1)
 
-        self.mid = nn.Sequential(*[ResBlock(width * 2) for _ in range(num_blocks)])
-        self.up1 = nn.ConvTranspose2d(width * 2, width, 4, stride=2, padding=1)
-        self.dec = nn.Sequential(*[ResBlock(width) for _ in range(num_blocks)])
-        self.tail = nn.Conv2d(width, 3, 3, padding=1)
+        self.ending = nn.Conv2d(
+            in_channels=width,
+            out_channels=img_channel,
+            kernel_size=3,
+            padding=1,
+            stride=1,
+            bias=True,
+        )
 
-    def forward(self, blur, motion_field, epoch=0):
-        if motion_field is None:
-            raise ValueError("MotionFieldDeblurNet needs motion_field input.")
+        self.encoders = nn.ModuleList()
+        self.downs = nn.ModuleList()
+        self.motion_refine_blks = nn.ModuleList()
 
-        _, _, original_h, original_w = blur.shape
-        pad_h = (2 - original_h % 2) % 2
-        pad_w = (2 - original_w % 2) % 2
-        if pad_h or pad_w:
-            blur = F.pad(blur, (0, pad_w, 0, pad_h))
+        self.middle_blks = nn.ModuleList()
+        self.motion_deblur_blks = nn.ModuleList()
 
-        image_feat = self.img_enc(self.img_head(blur))
-        image_down = self.down1(image_feat)
+        self.ups = nn.ModuleList()
+        self.decoders = nn.ModuleList()
 
-        if motion_field.shape[-2:] != image_down.shape[-2:]:
-            raise ValueError(
-                "motion_field shape must match the image feature resolution. "
-                f"got motion={tuple(motion_field.shape[-2:])}, expected={tuple(image_down.shape[-2:])}"
+        # -------------------------
+        # Encoder
+        # -------------------------
+        chan = width
+
+        for num_blocks in enc_blk_nums:
+            self.encoders.append(
+                nn.Sequential(
+                    *[NAFBlock(chan) for _ in range(num_blocks)]
+                )
             )
-        motion_feat = self.motion_head(motion_field)
 
-        fused = self.fuse(F.relu(torch.cat((image_down, motion_feat), dim=1)))
-        fused = self.mid(fused)
-        decoded = self.up1(fused) + image_feat
-        decoded = self.dec(decoded)
-        output = blur + self.tail(decoded)
-        return output[:, :, :original_h, :original_w]
+            self.motion_refine_blks.append(
+                MotionRefinementBlock(
+                    motion_channels=chan,
+                    blur_channels=chan,
+                )
+            )
+
+            self.downs.append(
+                nn.Conv2d(
+                    in_channels=chan,
+                    out_channels=chan * 2,
+                    kernel_size=2,
+                    stride=2,
+                )
+            )
+
+            chan = chan * 2
+
+        # -------------------------
+        # Bottleneck
+        # -------------------------
+        num_motion_blocks = 4
+        blocks_per_group = middle_blk_num // num_motion_blocks
+
+        for _ in range(num_motion_blocks):
+            self.middle_blks.append(
+                nn.Sequential(
+                    *[NAFBlock(chan) for _ in range(blocks_per_group)]
+                )
+            )
+
+            self.motion_deblur_blks.append(
+                MotionGuidedDeblurringBlock(chan)
+            )
+
+        remain_blocks = middle_blk_num % num_motion_blocks
+        if remain_blocks > 0:
+            self.middle_blks.append(
+                nn.Sequential(
+                    *[NAFBlock(chan) for _ in range(remain_blocks)]
+                )
+            )
+
+            self.motion_deblur_blks.append(
+                MotionGuidedDeblurringBlock(chan)
+            )
+
+        # -------------------------
+        # Decoder
+        # -------------------------
+        for num_blocks in dec_blk_nums:
+            self.ups.append(
+                nn.Sequential(
+                    nn.Conv2d(
+                        in_channels=chan,
+                        out_channels=chan * 2,
+                        kernel_size=1,
+                        bias=False,
+                    ),
+                    nn.PixelShuffle(2),
+                )
+            )
+
+            chan = chan // 2
+
+            self.decoders.append(
+                nn.Sequential(
+                    *[NAFBlock(chan) for _ in range(num_blocks)]
+                )
+            )
+
+        self.padder_size = 2 ** len(self.encoders)
+
+    def forward(self, blur, motion):
+        _, _, h, w = blur.shape
+
+        blur = self.check_image_size(blur)
+        motion = self.check_image_size(motion)
+
+        x = self.intro(blur)
+        motion_feat = self.intro_motion(motion)
+
+        encs = []
+
+        # -------------------------
+        # Encoder
+        # -------------------------
+        for encoder, down, motion_refine_blk in zip(
+            self.encoders,
+            self.downs,
+            self.motion_refine_blks,
+        ):
+            x = encoder(x)
+            encs.append(x)
+
+            motion_feat = motion_refine_blk(x, motion_feat)
+            x = down(x)
+
+        # -------------------------
+        # Bottleneck
+        # -------------------------
+        for middle_blk, motion_deblur_blk in zip(
+            self.middle_blks,
+            self.motion_deblur_blks,
+        ):
+            x = middle_blk(x)
+            x, motion_feat = motion_deblur_blk(x, motion_feat)
+
+        # -------------------------
+        # Decoder
+        # -------------------------
+        for decoder, up, enc_skip in zip(
+            self.decoders,
+            self.ups,
+            encs[::-1],
+        ):
+            x = up(x)
+            x = x + enc_skip
+            x = decoder(x)
+
+        x = self.ending(x)
+
+        # residual learning
+        x = x + blur
+
+        return x[:, :, :h, :w]
+
+    def check_image_size(self, x):
+        _, _, h, w = x.size()
+
+        mod_pad_h = (self.padder_size - h % self.padder_size) % self.padder_size
+        mod_pad_w = (self.padder_size - w % self.padder_size) % self.padder_size
+
+        x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h))
+        return x
 
 
-def build_model(config):
-    model_cfg = config["model"]
-    name = model_cfg.get("name", "motion_field_deblur")
-    width = int(model_cfg.get("width", 32))
-    num_blocks = int(model_cfg.get("num_blocks", 4))
+def _model_config(args):
+    if args is None:
+        return {}
+    if isinstance(args, dict):
+        return args.get("model", args)
+    return vars(args)
 
-    if name == "image_only":
-        return ImageOnlyDeblurNet(width=width, num_blocks=num_blocks)
 
-    if name == "motion_field_deblur":
-        return MotionFieldDeblurNet(
-            motion_channels=int(model_cfg.get("motion_channels", 12)),
-            width=width,
-            num_blocks=num_blocks,
-        )
+def _model_args(model_cfg):
+    aliases = {
+        "img_channels": "img_channel",
+        "image_channels": "img_channel",
+        "motion_channels": "motion_channel",
+    }
+    allowed = {
+        "img_channel",
+        "motion_channel",
+        "width",
+        "middle_blk_num",
+        "enc_blk_nums",
+        "dec_blk_nums",
+    }
 
-    raise ValueError(f"Unknown model.name: {name}")
+    kwargs = dict(model_cfg.get("args") or {})
+    for key in allowed:
+        if key in model_cfg and key not in kwargs:
+            kwargs[key] = model_cfg[key]
+    for source, target in aliases.items():
+        if source in model_cfg and target not in kwargs:
+            kwargs[target] = model_cfg[source]
+        if source in kwargs and target not in kwargs:
+            kwargs[target] = kwargs.pop(source)
+
+    unknown = sorted(set(kwargs) - allowed)
+    if unknown:
+        raise ValueError(f"Unknown MotionGuidedDeblurNet args: {unknown}")
+    return kwargs
+
+
+def build_model(args=None):
+    model_cfg = _model_config(args)
+    name = model_cfg.get("name", "motion_guided_deblur").lower()
+    if name not in ("motion_guided_deblur", "motion_guided_deblurnet"):
+        raise ValueError(f"Unknown model.name: {name}")
+    return MotionGuidedDeblurNet(**_model_args(model_cfg))
+
+
+if __name__ == "__main__":
+    img_channel = 3
+    motion_channel = 16
+    width = 32
+
+    enc_blks = (2, 2, 2)
+    middle_blk_num = 16
+    dec_blks = (1, 1, 1)
+
+    net = MotionGuidedDeblurNet(
+        img_channel=img_channel,
+        motion_channel=motion_channel,
+        width=width,
+        middle_blk_num=middle_blk_num,
+        enc_blk_nums=enc_blks,
+        dec_blk_nums=dec_blks,
+    ).cuda()
+
+    blur = torch.randn(1, 3, 256, 256).cuda()
+    motion = torch.randn(1, motion_channel, 256, 256).cuda()
+
+    out = net(blur, motion)
+
+    print("params:", sum(p.numel() for p in net.parameters()))
+    print("out:", out.shape)
+
+
+
+

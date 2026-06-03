@@ -42,7 +42,14 @@ def evaluate_model(model, loader, criterion, device, epoch=0, max_batches=None):
         blur = batch["lq"].to(device, non_blocking=True).float()
         sharp = batch["gt"].to(device, non_blocking=True).float()
         motion_field = batch["motion_field"].to(device, non_blocking=True).float()
-        pred = model(blur, motion_field, epoch)
+        if motion_field.shape[-2:] != blur.shape[-2:]:
+            motion_field = F.interpolate(
+                motion_field,
+                size=blur.shape[-2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+        pred = model(blur, motion_field)
         loss = criterion(pred, sharp)
         batch_size = blur.shape[0]
 
@@ -55,5 +62,7 @@ def evaluate_model(model, loader, criterion, device, epoch=0, max_batches=None):
         model.train()
 
     if count == 0:
-        return {"loss": 0.0, "psnr": 0.0, "ssim": 0.0}
-    return {key: value / count for key, value in total.items()}
+        return {"loss": 0.0, "psnr": 0.0, "ssim": 0.0, "count": 0}
+    metrics = {key: value / count for key, value in total.items()}
+    metrics["count"] = count
+    return metrics

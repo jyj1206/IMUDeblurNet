@@ -1,4 +1,5 @@
 import argparse
+import json
 import math
 import time
 from pathlib import Path
@@ -46,13 +47,24 @@ def parse_args():
 def sync_run_state(run_dir, resume_checkpoint, distributed):
     if not distributed:
         return run_dir, resume_checkpoint
-
     payload = [
         str(run_dir) if is_main_process() else None,
         str(resume_checkpoint) if is_main_process() and resume_checkpoint else None,
     ]
     torch.distributed.broadcast_object_list(payload, src=0)
     return Path(payload[0]), Path(payload[1]) if payload[1] else None
+
+
+def save_best_metrics(run_dir, iteration, metrics):
+    data = {
+        "iteration": int(iteration),
+        "loss_at_best_psnr": float(metrics["loss"]),
+        "best_psnr": float(metrics["psnr"]),
+        "ssim_at_best_psnr": float(metrics["ssim"]),
+        "count": int(metrics.get("count", 0)),
+    }
+    path = Path(run_dir) / "best_metrics.json"
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def distributed_world_size(distributed):
@@ -78,7 +90,7 @@ def main():
         run_dir.mkdir(parents=True, exist_ok=True)
     logger = build_logger(
         cfg["experiment"]["name"],
-        run_dir / "train.log" if is_main_process() else None,
+        run_dir / "log.txt" if is_main_process() else None,
         enabled=is_main_process(),
     )
     logger.info(f"run_dir={run_dir}")
@@ -175,18 +187,33 @@ def main():
             blur = batch["lq"].to(device, non_blocking=True).float()
             sharp = batch["gt"].to(device, non_blocking=True).float()
             motion_field = batch["motion_field"].to(device, non_blocking=True).float()
+            if motion_field.shape[-2:] != blur.shape[-2:]:
+                motion_field = torch.nn.functional.interpolate(
+                    motion_field,
+                    size=blur.shape[-2:],
+                    mode="bilinear",
+                    align_corners=False,
+                )
             optimizer.zero_grad(set_to_none=True)
 
-            pred = model(blur, motion_field, current_epoch)
+            pred = model(blur, motion_field)
             loss = criterion(pred, sharp)
             loss.backward()
             optimizer.step()
             if scheduler is not None:
                 scheduler.step()
 
+            progress.update(1)
             recent_losses.append(float(loss.detach().cpu()))
             if interval_due(current_iteration, log_interval) or current_iteration == total_iterations:
+                local_loss_avg = torch.tensor(
+                    sum(recent_losses) / max(1, len(recent_losses)),
+                    device=device,
+                )
                 loss_log = float(
+                    reduce_mean_tensor(local_loss_avg).detach().cpu()
+                )
+                loss_last_log = float(
                     reduce_mean_tensor(loss.detach()).detach().cpu()
                 )
                 psnr_log = float(
@@ -198,6 +225,7 @@ def main():
                 lr = optimizer.param_groups[0]["lr"]
                 train_metrics = {
                     "loss": loss_log,
+                    "loss_last": loss_last_log,
                     "psnr": psnr_log,
                     "ssim": ssim_log,
                     "lr": float(lr),
@@ -205,12 +233,13 @@ def main():
                 recent_losses.clear()
                 if is_main_process():
                     append_history(history, "train", current_iteration, train_metrics)
-                    progress.set_postfix(train_loss=train_metrics["loss"])
+                    progress.set_postfix(train_loss_avg=train_metrics["loss"])
                     elapsed = time.time() - last_log_time
                     last_log_time = time.time()
                     logger.info(
                         f"train iter={current_iteration}/{total_iterations} "
-                        f"loss={train_metrics['loss']:.6f} "
+                        f"loss_avg={train_metrics['loss']:.6f} "
+                        f"loss_last={train_metrics['loss_last']:.6f} "
                         f"psnr={train_metrics['psnr']:.4f} "
                         f"ssim={train_metrics['ssim']:.6f} "
                         f"lr={lr:.6e} elapsed={elapsed:.1f}s"
@@ -235,23 +264,30 @@ def main():
                         f"iter={current_iteration}/{total_iterations} "
                         f"val_loss={val_metrics['loss']:.6f} "
                         f"val_psnr={val_metrics['psnr']:.4f} "
-                        f"val_ssim={val_metrics['ssim']:.4f}"
+                        f"val_ssim={val_metrics['ssim']:.4f} "
+                        f"count={int(val_metrics.get('count', 0))}"
                     )
                     save_history(history, run_dir)
-                    if val_metrics["psnr"] > best_val_psnr:
+                    is_best = val_metrics["psnr"] > best_val_psnr
+                    if is_best:
                         best_val_psnr = val_metrics["psnr"]
-                        state = build_checkpoint_state(
-                            cfg,
-                            model,
-                            optimizer,
-                            scheduler,
-                            current_iteration,
-                            current_epoch,
-                            best_val_psnr,
-                            history,
-                            unwrap_model,
-                        )
+                    state = build_checkpoint_state(
+                        cfg,
+                        model,
+                        optimizer,
+                        scheduler,
+                        current_iteration,
+                        current_epoch,
+                        best_val_psnr,
+                        history,
+                        unwrap_model,
+                    )
+                    save_checkpoint(state, run_dir, "latest.pt")
+                    if is_best:
+                        save_checkpoint(state, run_dir, "best_psnr.pt")
                         save_checkpoint(state, run_dir, "best.pt")
+                        save_best_metrics(run_dir, current_iteration, val_metrics)
+                        logger.info(f"saved best checkpoint | psnr={best_val_psnr:.6f}")
 
             if is_main_process() and (
                 interval_due(current_iteration, checkpoint_interval)
@@ -268,11 +304,9 @@ def main():
                     history,
                     unwrap_model,
                 )
-                save_checkpoint(state, run_dir, "last.pt")
-                save_checkpoint(state, run_dir, f"iter_{current_iteration:08d}.pt")
+                save_checkpoint(state, run_dir, "latest.pt")
                 save_history(history, run_dir)
-
-            progress.update(1)
+                logger.info(f"saved latest checkpoint | iter={current_iteration}")
 
         first_epoch_offset = 0
         if current_iteration >= total_iterations:
@@ -292,7 +326,7 @@ def main():
             history,
             unwrap_model,
         )
-        save_checkpoint(state, run_dir, "last.pt")
+        save_checkpoint(state, run_dir, "latest.pt")
         save_history(history, run_dir)
         logger.info(f"finished total_iterations={current_iteration}, best_val_psnr={best_val_psnr:.4f}")
 

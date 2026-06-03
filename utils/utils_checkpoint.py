@@ -63,7 +63,7 @@ def prepare_run_dir(config, resume=None):
     if resume:
         resume_path = Path(resume)
         if resume_path.is_dir():
-            checkpoint_path = resume_path / "last.pt"
+            checkpoint_path = _latest_checkpoint_path(resume_path)
             if not checkpoint_path.exists():
                 raise FileNotFoundError(f"Missing checkpoint: {checkpoint_path}")
             return resume_path, checkpoint_path
@@ -77,12 +77,28 @@ def prepare_run_dir(config, resume=None):
     return _new_run_dir(result_root, run_prefix), None
 
 
-def save_checkpoint(state, run_dir, name="last.pt"):
-    run_dir = Path(run_dir)
-    run_dir.mkdir(parents=True, exist_ok=True)
-    path = run_dir / name
+def save_checkpoint(state, run_dir, name="latest.pt"):
+    path = checkpoint_dir(run_dir) / name
+    path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(state, path)
     return path
+
+
+def checkpoint_dir(run_dir):
+    return Path(run_dir) / "checkpoints"
+
+
+def _latest_checkpoint_path(run_dir):
+    run_dir = Path(run_dir)
+    candidates = [
+        checkpoint_dir(run_dir) / "latest.pt",
+        checkpoint_dir(run_dir) / "last.pt",
+        run_dir / "last.pt",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
 
 
 def _new_run_dir(result_root, run_prefix):

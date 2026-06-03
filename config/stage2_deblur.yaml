@@ -1,47 +1,63 @@
-paths:
-  dataset_root: data/IMUBlur
-  log_root: result
-  run_name: stage2_motion_field_deblur
+# Stage 2 deblurring training config.
+# Values under model.args are passed to models/stage2_deblur_model.py::build_model.
+
+experiment:
+  name: stage2_motion_field_deblur
+  result_root: result
   run_prefix: run
   output_dir: null
-  resume: null
 
-data:
-  train_split: train
-  val_split: val
+dataset:
+  root: data/IMUBlur
+  split: train
   metadata_name: metadata.csv
   patch_size: 256
   batch_size: 4
-  val_batch_size: 4
   num_workers: 8
-  val_workers: 4
-  use_validation: true
-  val_max_batches: null
 
-motion_field:
-  root: null
-  dir: camera_motion_field
-  ext: npy
-  downsample: 2
+  motion_field_root: null
+  motion_field_dir: camera_motion_field
+  motion_field_ext: npy
+  motion_downsample: 2
+
+validation:
+  enabled: true
+  split: val
+  batch_size: 4
+  num_workers: 4
+  interval: 1000
+  max_batches: null
 
 train:
-  total_iters: 400000
+  iterations: 400000
   epochs: null
+  resume: null
   loss: psnr
-  val_every: 1000
-  save_every: 5000
-  log_every: 200
+  checkpoint_interval: 5000
+  log_interval: 200
 
 model:
-  name: motion_field_deblur
-  motion_channels: 12
-  width: 32
-  num_blocks: 4
+  name: motion_guided_deblur
+  args:
+    img_channel: 3
+    motion_channel: 12
+    width: 32
+    middle_blk_num: 16
+    enc_blk_nums:
+      - 2
+      - 2
+      - 2
+    dec_blk_nums:
+      - 1
+      - 1
+      - 1
 
 optimizer:
   name: adam
   lr: 0.0001
-  betas: [0.9, 0.999]
+  betas:
+    - 0.9
+    - 0.999
   weight_decay: 0.0
 
 scheduler:

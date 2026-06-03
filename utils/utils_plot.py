@@ -1,5 +1,4 @@
 import csv
-import json
 from pathlib import Path
 
 
@@ -11,65 +10,71 @@ def append_history(history, split, iteration, metrics):
 
 def save_history(history, run_dir):
     run_dir = Path(run_dir)
-    run_dir.mkdir(parents=True, exist_ok=True)
-    _save_history_json(history, run_dir / "metrics_history.json")
-    _save_history_csv(history, run_dir / "metrics_history.csv")
-    _plot_history(history, run_dir / "metrics.png")
+    metric_dir = run_dir / "metrics"
+    metric_dir.mkdir(parents=True, exist_ok=True)
+
+    train_rows = [row for row in history if row["split"] == "train"]
+    val_rows = [row for row in history if row["split"] == "val"]
+    _save_split_csv(
+        train_rows,
+        metric_dir / "train_log.csv",
+        ["iteration", "loss", "loss_last", "psnr", "ssim", "lr"],
+    )
+    _save_split_csv(
+        val_rows,
+        metric_dir / "validation_log.csv",
+        ["iteration", "loss", "psnr", "ssim", "count"],
+    )
+    _plot_metric_curves(metric_dir, train_rows, val_rows)
 
 
-def _save_history_json(history, path):
-    with Path(path).open("w", encoding="utf-8") as file:
-        json.dump(history, file, indent=2)
-
-
-def _save_history_csv(history, path):
-    metric_fields = []
-    for row in history:
+def _save_split_csv(rows, path, preferred_fields):
+    fields = list(preferred_fields)
+    for row in rows:
         for key in row:
-            if key not in {"split", "iteration"} and key not in metric_fields:
-                metric_fields.append(key)
-    fields = ["split", "iteration", *metric_fields]
-    with Path(path).open("w", encoding="utf-8", newline="") as file:
+            if key not in {"split"} and key not in fields:
+                fields.append(key)
+
+    with Path(path).open("w", encoding="utf-8-sig", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=fields)
         writer.writeheader()
-        for row in history:
+        for row in rows:
             writer.writerow({field: row.get(field, "") for field in fields})
 
 
-def _plot_history(history, path):
+def _plot_metric_curves(metric_dir, train_rows, val_rows):
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    train = [row for row in history if row["split"] == "train"]
-    val = [row for row in history if row["split"] == "val"]
-
-    metrics = []
-    for row in history:
-        for key in row:
-            if key not in {"split", "iteration"} and key not in metrics:
-                metrics.append(key)
-    if not metrics:
-        return
-
-    fig, axes = plt.subplots(len(metrics), 1, figsize=(10, 4 * len(metrics)), sharex=True)
-    if len(metrics) == 1:
-        axes = [axes]
-    for axis, metric in zip(axes, metrics):
-        for split, rows in [("train", train), ("val", val)]:
+    specs = [
+        ("loss", "Loss", "loss_curve.png"),
+        ("psnr", "PSNR (dB)", "psnr_curve.png"),
+        ("ssim", "SSIM", "ssim_curve.png"),
+    ]
+    for metric, ylabel, filename in specs:
+        fig, axis = plt.subplots(figsize=(8, 4.5))
+        plotted = False
+        for split, rows in [("train", train_rows), ("validation", val_rows)]:
             rows = [row for row in rows if metric in row]
-            if rows:
-                axis.plot(
-                    [row["iteration"] for row in rows],
-                    [row[metric] for row in rows],
-                    label=split,
-                )
-        axis.set_ylabel(metric)
+            if not rows:
+                continue
+            axis.plot(
+                [row["iteration"] for row in rows],
+                [row[metric] for row in rows],
+                label=f"{split} {metric}",
+                linewidth=1.8,
+                marker="o" if split == "validation" else None,
+            )
+            plotted = True
+        if not plotted:
+            plt.close(fig)
+            continue
+        axis.set_xlabel("Iteration")
+        axis.set_ylabel(ylabel)
         axis.grid(True, alpha=0.3)
         axis.legend()
-
-    axes[-1].set_xlabel("iteration")
-    fig.tight_layout()
-    fig.savefig(path)
-    plt.close(fig)
+        fig.tight_layout()
+        fig.savefig(metric_dir / filename, dpi=150)
+        plt.close(fig)

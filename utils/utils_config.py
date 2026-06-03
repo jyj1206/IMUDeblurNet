@@ -47,6 +47,31 @@ def normalize_config(config):
         dataset["motion_field_ext"] = motion.get("ext", dataset.get("motion_field_ext", "npy"))
         dataset["motion_downsample"] = motion.get("downsample", dataset.get("motion_downsample", 2))
 
+    model = config.setdefault("model", {})
+    model_args = dict(model.get("args") or {})
+    model_aliases = {
+        "img_channels": "img_channel",
+        "image_channels": "img_channel",
+        "motion_channels": "motion_channel",
+    }
+    for source, target in model_aliases.items():
+        if source in model and target not in model_args:
+            model_args[target] = model[source]
+        if source in model_args and target not in model_args:
+            model_args[target] = model_args.pop(source)
+    for key in (
+        "img_channel",
+        "motion_channel",
+        "width",
+        "middle_blk_num",
+        "enc_blk_nums",
+        "dec_blk_nums",
+    ):
+        if key in model and key not in model_args:
+            model_args[key] = model[key]
+    if model_args:
+        model["args"] = model_args
+
     train = config.setdefault("train", {})
     if "total_iters" in train:
         train["iterations"] = train["total_iters"]
