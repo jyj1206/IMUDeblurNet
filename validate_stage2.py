@@ -19,6 +19,7 @@ from utils.utils_eval import (
     save_csv,
     save_json,
 )
+from utils.utils_iqa import Stage2IqaMetrics, normalize_iqa_metric_names
 from utils.utils_metrics import sample_psnr, sample_ssim
 from utils.utils_visualization import make_stage2_comparison, tensor_to_rgb_uint8, write_image
 
@@ -35,6 +36,17 @@ def parse_args():
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--non-strict", action="store_true")
+    parser.add_argument(
+        "--extra-metrics",
+        nargs="*",
+        default=[],
+        help="Optional standalone validation metrics: lpips niqe topiq/topiq_fr topiq_nr.",
+    )
+    parser.add_argument(
+        "--realblur-metrics",
+        action="store_true",
+        help="Shortcut for RealBlur-style evaluation: LPIPS, NIQE, and TOPIQ-FR.",
+    )
     return parser.parse_args()
 
 
@@ -42,6 +54,12 @@ def resolve_device(name):
     if name == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(name)
+
+
+def format_metric(name, value):
+    if name == "psnr":
+        return f"{float(value):.6f}"
+    return f"{float(value):.8f}"
 
 
 @torch.no_grad()
@@ -67,8 +85,14 @@ def main():
     model = build_model(cfg).to(device).eval()
     load_report = load_model_weights(model, args.checkpoint, device=device, strict=not args.non_strict)
     criterion = build_criterion(cfg.get("train", {}).get("loss", "psnr")).to(device)
-    overall = MetricAverager(["loss", "psnr", "ssim"])
-    by_type = GroupedMetricAverager(["loss", "psnr", "ssim"])
+    extra_metric_names = normalize_iqa_metric_names(
+        args.extra_metrics,
+        realblur_preset=args.realblur_metrics,
+    )
+    iqa_metrics = Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
+    metric_names = ["loss", "psnr", "ssim", *extra_metric_names]
+    overall = MetricAverager(metric_names)
+    by_type = GroupedMetricAverager(metric_names)
     sample_rows = []
     saved = 0
 
@@ -90,6 +114,7 @@ def main():
         pred = pred_raw.clamp(0.0, 1.0)
         psnr_values = sample_psnr(pred, sharp).detach().cpu()
         ssim_values = sample_ssim(pred, sharp).detach().cpu()
+        extra_values = iqa_metrics(pred, sharp) if iqa_metrics is not None else {}
         if criterion.__class__.__name__.lower().startswith("psnr"):
             mse = ((pred_raw - sharp) ** 2).flatten(1).mean(dim=1)
             loss_values = (10.0 * torch.log10(mse + 1e-8)).detach().cpu()
@@ -107,16 +132,17 @@ def main():
                 "psnr": float(psnr_values[idx]),
                 "ssim": float(ssim_values[idx]),
             }
+            for metric_name in extra_metric_names:
+                metrics[metric_name] = float(extra_values[metric_name][idx])
             overall.update(metrics)
             by_type.update(types[idx], metrics)
             row = {
                 "index": indices[idx],
                 "type": types[idx],
                 "stem": stems[idx],
-                "loss": f"{metrics['loss']:.8f}",
-                "psnr": f"{metrics['psnr']:.6f}",
-                "ssim": f"{metrics['ssim']:.8f}",
             }
+            for metric_name in metric_names:
+                row[metric_name] = format_metric(metric_name, metrics[metric_name])
             sample_rows.append(row)
 
             if saved < int(args.save_limit):
@@ -143,11 +169,12 @@ def main():
         "checkpoint": args.checkpoint,
         "split": split,
         "max_batches": max_batches,
+        "extra_metrics": extra_metric_names,
         "load_report": load_report,
         "saved_visuals": saved,
     }
     save_json(run_dir / "metrics.json", metrics)
-    save_csv(run_dir / "samples.csv", sample_rows, ["index", "type", "stem", "loss", "psnr", "ssim"])
+    save_csv(run_dir / "samples.csv", sample_rows, ["index", "type", "stem", *metric_names])
     print(f"saved: {run_dir}")
     print(metrics["overall"])
     print(metrics["by_type"])

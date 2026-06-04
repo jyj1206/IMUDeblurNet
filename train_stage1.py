@@ -1,4 +1,5 @@
 import argparse
+import json
 import time
 from pathlib import Path
 
@@ -151,6 +152,17 @@ def save_checkpoint(path, config, model, optimizer, scheduler, epoch, best_val_l
     )
 
 
+def save_best_metrics(run_dir, epoch, metrics):
+    data = {
+        "epoch": int(epoch),
+        "best_val_loss": float(metrics["loss"]),
+        "mae_at_best_loss": float(metrics["mae"]),
+        "count": int(metrics.get("count", 0)),
+    }
+    path = Path(run_dir) / "best_metrics.json"
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def load_checkpoint(path, model, optimizer, scheduler, device):
     checkpoint = torch.load(path, map_location=device)
     unwrap_model(model).load_state_dict(checkpoint["model"])
@@ -296,6 +308,8 @@ def main():
                         best_val_loss,
                         history,
                     )
+                    save_best_metrics(run_dir, epoch + 1, val_metrics)
+                    logger.info(f"saved best checkpoint | loss={best_val_loss:.6f}")
 
         if is_main_process():
             save_history(history, run_dir)

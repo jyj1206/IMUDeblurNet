@@ -22,6 +22,7 @@ from utils.utils_eval import (
     save_csv,
     save_json,
 )
+from utils.utils_iqa import Stage2IqaMetrics, normalize_iqa_metric_names
 from utils.utils_metrics import sample_psnr, sample_ssim
 from utils.utils_visualization import (
     make_cmf_visualization,
@@ -46,8 +47,24 @@ def parse_args():
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--default-dt", type=float, default=1.0 / 240.0)
+    parser.add_argument(
+        "--load-target-gyro",
+        action="store_true",
+        help="Also load sensor_windows.npy and report Stage1 gyro MAE/RMSE when the dataset has gyro GT.",
+    )
     parser.add_argument("--non-strict-stage1", action="store_true")
     parser.add_argument("--non-strict-stage2", action="store_true")
+    parser.add_argument(
+        "--extra-metrics",
+        nargs="*",
+        default=[],
+        help="Optional final-image metrics: lpips niqe topiq/topiq_fr topiq_nr.",
+    )
+    parser.add_argument(
+        "--realblur-metrics",
+        action="store_true",
+        help="Shortcut for RealBlur-style final-image evaluation: LPIPS, NIQE, and TOPIQ-FR.",
+    )
     return parser.parse_args()
 
 
@@ -56,6 +73,12 @@ def sample_stage2_loss(pred_raw, sharp, loss_name):
         mse = ((pred_raw - sharp) ** 2).flatten(1).mean(dim=1)
         return (10.0 * torch.log10(mse + 1e-8)).detach().cpu()
     return (pred_raw - sharp).abs().flatten(1).mean(dim=1).detach().cpu()
+
+
+def format_metric(name, value):
+    if name == "psnr":
+        return f"{float(value):.6f}"
+    return f"{float(value):.8f}"
 
 
 @torch.no_grad()
@@ -72,6 +95,7 @@ def main():
     output_dir = run_dir / "outputs"
 
     split = args.split or stage2_cfg.get("validation", {}).get("split") or "val"
+    load_target_gyro = args.load_target_gyro
     _, loader = build_stage1_stage2_loader(
         stage1_cfg,
         stage2_cfg,
@@ -79,7 +103,7 @@ def main():
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         device=device,
-        load_target_gyro=True,
+        load_target_gyro=load_target_gyro,
         default_dt=args.default_dt,
     )
     stage1_model, stage2_model, load_report = load_stage1_stage2_models(
@@ -91,8 +115,17 @@ def main():
         strict_stage1=not args.non_strict_stage1,
         strict_stage2=not args.non_strict_stage2,
     )
-    overall = MetricAverager(["loss", "psnr", "ssim", "gyro_mae", "gyro_rmse"])
-    by_type = GroupedMetricAverager(["loss", "psnr", "ssim", "gyro_mae", "gyro_rmse"])
+    extra_metric_names = normalize_iqa_metric_names(
+        args.extra_metrics,
+        realblur_preset=args.realblur_metrics,
+    )
+    iqa_metrics = Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
+    metric_names = ["loss", "psnr", "ssim"]
+    if load_target_gyro:
+        metric_names.extend(["gyro_mae", "gyro_rmse"])
+    metric_names.extend(extra_metric_names)
+    overall = MetricAverager(metric_names)
+    by_type = GroupedMetricAverager(metric_names)
     rows = []
     saved = 0
     max_batches = args.max_batches
@@ -119,18 +152,20 @@ def main():
         pred = result["pred"]
         pred_raw = result["pred_raw"]
         pred_gyro = result["pred_gyro"].detach().cpu()
-        target_gyro = batch["gyro"]
+        target_gyro = batch["gyro"] if load_target_gyro else None
         cmf = result["cmf"].detach().cpu()
 
         psnr_values = sample_psnr(pred, sharp).detach().cpu()
         ssim_values = sample_ssim(pred, sharp).detach().cpu()
+        extra_values = iqa_metrics(pred, sharp) if iqa_metrics is not None else {}
         loss_values = sample_stage2_loss(
             pred_raw,
             sharp,
             stage2_cfg.get("train", {}).get("loss", "psnr"),
         )
-        gyro_mae_values = (pred_gyro - target_gyro).abs().flatten(1).mean(dim=1)
-        gyro_rmse_values = torch.sqrt(((pred_gyro - target_gyro) ** 2).flatten(1).mean(dim=1))
+        if load_target_gyro:
+            gyro_mae_values = (pred_gyro - target_gyro).abs().flatten(1).mean(dim=1)
+            gyro_rmse_values = torch.sqrt(((pred_gyro - target_gyro) ** 2).flatten(1).mean(dim=1))
 
         batch_size = pred.shape[0]
         stems = batch_meta_list(batch, "stem", batch_size, "sample")
@@ -143,9 +178,12 @@ def main():
                 "loss": float(loss_values[idx]),
                 "psnr": float(psnr_values[idx]),
                 "ssim": float(ssim_values[idx]),
-                "gyro_mae": float(gyro_mae_values[idx]),
-                "gyro_rmse": float(gyro_rmse_values[idx]),
             }
+            if load_target_gyro:
+                metrics["gyro_mae"] = float(gyro_mae_values[idx])
+                metrics["gyro_rmse"] = float(gyro_rmse_values[idx])
+            for metric_name in extra_metric_names:
+                metrics[metric_name] = float(extra_values[metric_name][idx])
             overall.update(metrics)
             by_type.update(types[idx], metrics)
             name = safe_name(f"{indices[idx]:06d}", types[idx], stems[idx])
@@ -153,18 +191,15 @@ def main():
                 "index": indices[idx],
                 "type": types[idx],
                 "stem": stems[idx],
-                "loss": f"{metrics['loss']:.8f}",
-                "psnr": f"{metrics['psnr']:.6f}",
-                "ssim": f"{metrics['ssim']:.8f}",
-                "gyro_mae": f"{metrics['gyro_mae']:.8f}",
-                "gyro_rmse": f"{metrics['gyro_rmse']:.8f}",
             }
+            for metric_name in metric_names:
+                row[metric_name] = format_metric(metric_name, metrics[metric_name])
 
             if saved < int(args.save_limit):
                 gyro_visual = make_stage1_gyro_visualization(
                     batch["stage1_image"][idx],
                     pred_gyro[idx],
-                    target_gyro=target_gyro[idx],
+                    target_gyro=target_gyro[idx] if load_target_gyro else None,
                     title=f"B -> gyro | {types[idx]} / {stems[idx]}",
                     mean=image_cfg.get("mean"),
                     std=image_cfg.get("std"),
@@ -208,11 +243,7 @@ def main():
         "index",
         "type",
         "stem",
-        "loss",
-        "psnr",
-        "ssim",
-        "gyro_mae",
-        "gyro_rmse",
+        *metric_names,
         "gyro_visual_path",
         "cmf_visual_path",
         "stage2_visual_path",
@@ -230,6 +261,8 @@ def main():
             "stage2_checkpoint": args.stage2_checkpoint,
             "split": split,
             "max_batches": max_batches,
+            "extra_metrics": extra_metric_names,
+            "load_target_gyro": load_target_gyro,
             "load_report": load_report,
             "saved_visuals": saved,
         },

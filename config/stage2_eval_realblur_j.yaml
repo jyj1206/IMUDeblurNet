@@ -1,0 +1,70 @@
+# Stage1 -> Stage2 validation config for RealBlur-J paired image evaluation.
+# Use with validate_stage1_stage2.py, --no-target-gyro, and optionally --realblur-metrics.
+
+experiment:
+  name: stage2_eval_realblur_j
+  result_root: result
+  run_prefix: stage2_eval_realblur_j
+  output_dir: null
+
+dataset:
+  root: data/External/RealBlur_J
+  split: val
+  metadata_name: metadata.csv
+  patch_size: 256
+  batch_size: 1
+  num_workers: 4
+
+  motion_field_root: null
+  motion_field_dir: camera_motion_field
+  motion_field_ext: npy
+  motion_downsample: 2
+
+validation:
+  enabled: true
+  split: val
+  batch_size: 1
+  num_workers: 4
+  interval: 1000
+  max_batches: null
+
+train:
+  iterations: 400000
+  epochs: null
+  resume: null
+  loss: psnr
+  checkpoint_interval: 5000
+  log_interval: 200
+
+model:
+  name: motion_guided_deblur
+  args:
+    img_channel: 3
+    motion_channel: 12
+    width: 32
+    middle_blk_num: 16
+    enc_blk_nums:
+      - 2
+      - 2
+      - 2
+    dec_blk_nums:
+      - 1
+      - 1
+      - 1
+
+optimizer:
+  name: adamw
+  lr: 0.0001
+  betas:
+    - 0.9
+    - 0.999
+  weight_decay: 0.0001
+
+scheduler:
+  name: cosine
+  t_max: null
+  eta_min: 0.0000001
+
+distributed:
+  enabled: true
+  backend: auto
