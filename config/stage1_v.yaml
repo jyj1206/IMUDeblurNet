@@ -1,4 +1,5 @@
-# Stage 1: estimate the V vectors used to build a camera motion field from one blurred image.
+# Stage 1: estimate the gyro window used to build a camera motion field from one blurred image.
+# In the GyroDeblurNet paper, V refers to the camera motion field (CMF), not raw gyro.
 
 experiment:
   name: stage1_cmf_estimation

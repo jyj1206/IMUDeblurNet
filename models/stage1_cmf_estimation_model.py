@@ -86,7 +86,8 @@ class Stage1CMFEstimationNet(nn.Module):
 
     def forward(self, blur):
         features = self.backbone({"image": blur})["features"]
-        return {"v": self.v_head(features[-1])}
+        gyro = self.v_head(features[-1])
+        return {"gyro": gyro, "v": gyro}
 
 
 def _as_dict(value):

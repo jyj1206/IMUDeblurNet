@@ -19,11 +19,11 @@ from utils.utils_eval import (
     save_csv,
     save_json,
 )
-from utils.utils_visualization import make_stage1_v_visualization, write_image
+from utils.utils_visualization import make_stage1_gyro_visualization, write_image
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Stage1 V validation by motion type.")
+    parser = argparse.ArgumentParser(description="Stage1 gyro validation by motion type.")
     parser.add_argument("--config", default="config/stage1_v.yaml")
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--split", default=None)
@@ -95,11 +95,11 @@ def main():
             break
 
         image = batch["image"].to(device, non_blocking=True).float()
-        target_v = batch["v"].to(device, non_blocking=True).float()
-        pred_v = model(image)["v"]
-        per_item_loss = criterion(pred_v, target_v).flatten(1).mean(dim=1)
-        per_item_mae = (pred_v - target_v).abs().flatten(1).mean(dim=1)
-        per_item_rmse = torch.sqrt(((pred_v - target_v) ** 2).flatten(1).mean(dim=1))
+        target_gyro = batch["gyro"].to(device, non_blocking=True).float()
+        pred_gyro = model(image)["gyro"]
+        per_item_loss = criterion(pred_gyro, target_gyro).flatten(1).mean(dim=1)
+        per_item_mae = (pred_gyro - target_gyro).abs().flatten(1).mean(dim=1)
+        per_item_rmse = torch.sqrt(((pred_gyro - target_gyro) ** 2).flatten(1).mean(dim=1))
 
         batch_size = image.shape[0]
         stems = batch_meta_list(batch, "stem", batch_size, "sample")
@@ -124,10 +124,10 @@ def main():
 
             if saved < int(args.save_limit):
                 name = safe_name(f"{indices[idx]:06d}", types[idx], stems[idx])
-                visual = make_stage1_v_visualization(
+                visual = make_stage1_gyro_visualization(
                     batch["image"][idx],
-                    pred_v[idx].detach().cpu(),
-                    target_v=target_v[idx].detach().cpu(),
+                    pred_gyro[idx].detach().cpu(),
+                    target_gyro=target_gyro[idx].detach().cpu(),
                     title=f"{types[idx]} / {stems[idx]}",
                     mean=image_cfg.get("mean"),
                     std=image_cfg.get("std"),

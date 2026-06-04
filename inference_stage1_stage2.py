@@ -24,7 +24,8 @@ from utils.utils_eval import (
 )
 from utils.utils_metrics import sample_psnr, sample_ssim
 from utils.utils_visualization import (
-    make_stage1_v_visualization,
+    make_cmf_visualization,
+    make_stage1_gyro_visualization,
     make_stage2_comparison,
     tensor_to_rgb_uint8,
     write_image,
@@ -32,7 +33,7 @@ from utils.utils_visualization import (
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="End-to-end inference: B -> V, V + B -> S.")
+    parser = argparse.ArgumentParser(description="End-to-end inference: B -> gyro, gyro -> CMF, B + CMF -> S.")
     parser.add_argument("--stage1-config", default="config/stage1_v.yaml")
     parser.add_argument("--stage1-checkpoint", default=None)
     parser.add_argument("--stage2-config", default="config/stage2_deblur.yaml")
@@ -57,7 +58,8 @@ def main():
     device = resolve_device(args.device)
     run_dir = create_run_dir(args.output_root, "stage1_stage2_inference")
     visual_dir = run_dir / "visuals"
-    stage1_visual_dir = visual_dir / "stage1_v"
+    gyro_visual_dir = visual_dir / "gyro"
+    cmf_visual_dir = visual_dir / "cmf"
     stage2_visual_dir = visual_dir / "stage2"
     output_dir = run_dir / "outputs"
 
@@ -69,7 +71,7 @@ def main():
         batch_size=max(1, int(args.batch_size)),
         num_workers=max(0, int(args.num_workers)),
         device=device,
-        load_target_v=False,
+        load_target_gyro=False,
         default_dt=args.default_dt,
     )
     stage1_model, stage2_model, load_report = load_stage1_stage2_models(
@@ -101,7 +103,8 @@ def main():
             default_dt=args.default_dt,
         )
         pred = result["pred"]
-        pred_v = result["pred_v"].detach().cpu()
+        pred_gyro = result["pred_gyro"].detach().cpu()
+        cmf = result["cmf"].detach().cpu()
         psnr_values = sample_psnr(pred, sharp).detach().cpu()
         ssim_values = sample_ssim(pred, sharp).detach().cpu()
 
@@ -120,12 +123,17 @@ def main():
             }
             summary.update(metrics)
             name = safe_name(f"{indices[idx]:06d}", types[idx], stems[idx])
-            stage1_visual = make_stage1_v_visualization(
+            gyro_visual = make_stage1_gyro_visualization(
                 batch["stage1_image"][idx],
-                pred_v[idx],
-                title=f"B -> V | {types[idx]} / {stems[idx]}",
+                pred_gyro[idx],
+                title=f"B -> gyro | {types[idx]} / {stems[idx]}",
                 mean=image_cfg.get("mean"),
                 std=image_cfg.get("std"),
+            )
+            cmf_visual = make_cmf_visualization(
+                batch["lq"][idx],
+                cmf[idx],
+                title=f"gyro -> CMF (paper V) | {types[idx]} / {stems[idx]}",
             )
             stage2_visual = make_stage2_comparison(
                 batch["lq"][idx],
@@ -133,13 +141,15 @@ def main():
                 batch["gt"][idx],
                 psnr=metrics["psnr"],
                 ssim=metrics["ssim"],
-                title=f"V + B -> S | {types[idx]} / {stems[idx]}",
+                title=f"B + CMF -> S | {types[idx]} / {stems[idx]}",
             )
             output_rgb = tensor_to_rgb_uint8(pred[idx].detach().cpu())
-            stage1_visual_path = stage1_visual_dir / f"{name}.png"
+            gyro_visual_path = gyro_visual_dir / f"{name}.png"
+            cmf_visual_path = cmf_visual_dir / f"{name}.png"
             stage2_visual_path = stage2_visual_dir / f"{name}.png"
             output_path = output_dir / f"{name}_deblur.png"
-            write_image(stage1_visual_path, stage1_visual)
+            write_image(gyro_visual_path, gyro_visual)
+            write_image(cmf_visual_path, cmf_visual)
             write_image(stage2_visual_path, stage2_visual)
             write_image(output_path, output_rgb[:, :, ::-1].copy())
 
@@ -149,14 +159,15 @@ def main():
                 "stem": stems[idx],
                 "psnr": f"{metrics['psnr']:.6f}",
                 "ssim": f"{metrics['ssim']:.8f}",
-                "stage1_visual_path": str(stage1_visual_path),
+                "gyro_visual_path": str(gyro_visual_path),
+                "cmf_visual_path": str(cmf_visual_path),
                 "stage2_visual_path": str(stage2_visual_path),
                 "output_path": str(output_path),
             }
-            for v_idx, vector in enumerate(pred_v[idx].numpy()):
-                row[f"pred_v{v_idx}_x"] = f"{vector[0]:.8f}"
-                row[f"pred_v{v_idx}_y"] = f"{vector[1]:.8f}"
-                row[f"pred_v{v_idx}_z"] = f"{vector[2]:.8f}"
+            for gyro_idx, vector in enumerate(pred_gyro[idx].numpy()):
+                row[f"pred_gyro{gyro_idx}_x"] = f"{vector[0]:.8f}"
+                row[f"pred_gyro{gyro_idx}_y"] = f"{vector[1]:.8f}"
+                row[f"pred_gyro{gyro_idx}_z"] = f"{vector[2]:.8f}"
             rows.append(row)
             saved += 1
 
@@ -169,7 +180,8 @@ def main():
         "stem",
         "psnr",
         "ssim",
-        "stage1_visual_path",
+        "gyro_visual_path",
+        "cmf_visual_path",
         "stage2_visual_path",
         "output_path",
     ]

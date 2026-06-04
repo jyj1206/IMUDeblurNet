@@ -96,7 +96,7 @@ class Stage1VDataset(Dataset):
     def _load_sensor_windows(self, row):
         scene_dir = row.get("scene_dir", "")
         if not scene_dir:
-            raise FileNotFoundError("Stage1 V target needs scene_dir in metadata.")
+            raise FileNotFoundError("Stage1 gyro target needs scene_dir in metadata.")
         if scene_dir not in self.sensor_cache:
             path = self.split_root / scene_dir / "sensor_windows.npy"
             if not path.exists():
@@ -104,19 +104,19 @@ class Stage1VDataset(Dataset):
             self.sensor_cache[scene_dir] = np.load(path, mmap_mode="r")
         return self.sensor_cache[scene_dir]
 
-    def _load_v(self, row):
+    def _load_gyro_window(self, row):
         sensor_windows = self._load_sensor_windows(row)
         sensor_idx = self._sensor_idx(row)
         end = self.vector_start + self.vector_dim
-        v = np.asarray(
+        gyro = np.asarray(
             sensor_windows[sensor_idx, : self.num_vectors, self.vector_start:end],
             dtype=np.float32,
         )
-        if v.shape != (self.num_vectors, self.vector_dim):
+        if gyro.shape != (self.num_vectors, self.vector_dim):
             raise ValueError(
-                f"V target shape must be {(self.num_vectors, self.vector_dim)}, got {v.shape}"
+                f"gyro target shape must be {(self.num_vectors, self.vector_dim)}, got {gyro.shape}"
             )
-        return torch.from_numpy(np.ascontiguousarray(v))
+        return torch.from_numpy(np.ascontiguousarray(gyro))
 
     def _sample_meta(self, index, row, image_path):
         return {
@@ -137,9 +137,11 @@ class Stage1VDataset(Dataset):
         image = load_image(image_path)
         image = _resize_image(image, self.image_size)
         image = _normalize_image(image, self.normalize_mean, self.normalize_std)
+        gyro = self._load_gyro_window(row)
         return {
             "image": image,
-            "v": self._load_v(row),
+            "gyro": gyro,
+            "v": gyro,
             "meta": self._sample_meta(index, row, image_path),
         }
 

@@ -1,5 +1,4 @@
 import argparse
-import json
 import time
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from utils import (
     is_main_process,
     load_config,
     save_config,
+    save_history,
     set_seed,
     unwrap_model,
 )
@@ -120,12 +120,12 @@ def evaluate(model, loader, criterion, device, show_progress=False):
     batches = tqdm(loader, desc="val", leave=False, disable=not show_progress)
     for batch in batches:
         image = batch["image"].to(device, non_blocking=True).float()
-        target_v = batch["v"].to(device, non_blocking=True).float()
-        pred_v = model(image)["v"]
-        loss = criterion(pred_v, target_v)
+        target_gyro = batch["gyro"].to(device, non_blocking=True).float()
+        pred_gyro = model(image)["gyro"]
+        loss = criterion(pred_gyro, target_gyro)
         batch_size = image.shape[0]
         metrics["loss_sum"] += float(loss.detach().cpu()) * batch_size
-        metrics["mae_sum"] += float((pred_v - target_v).abs().mean().detach().cpu()) * batch_size
+        metrics["mae_sum"] += float((pred_gyro - target_gyro).abs().mean().detach().cpu()) * batch_size
         metrics["count"] += batch_size
         if show_progress:
             current = metrics_from_sums(metrics)
@@ -238,10 +238,10 @@ def main():
         )
         for step, batch in enumerate(progress, start=1):
             image = batch["image"].to(device, non_blocking=True).float()
-            target_v = batch["v"].to(device, non_blocking=True).float()
+            target_gyro = batch["gyro"].to(device, non_blocking=True).float()
             optimizer.zero_grad(set_to_none=True)
-            pred_v = model(image)["v"]
-            loss = criterion(pred_v, target_v)
+            pred_gyro = model(image)["gyro"]
+            loss = criterion(pred_gyro, target_gyro)
             loss.backward()
             optimizer.step()
             if scheduler is not None and scheduler_step == "iteration":
@@ -249,7 +249,7 @@ def main():
 
             batch_size = image.shape[0]
             running["loss_sum"] += float(loss.detach().cpu()) * batch_size
-            running["mae_sum"] += float((pred_v - target_v).abs().mean().detach().cpu()) * batch_size
+            running["mae_sum"] += float((pred_gyro - target_gyro).abs().mean().detach().cpu()) * batch_size
             running["count"] += batch_size
 
             if is_main_process() and (step % log_interval == 0 or step == len(train_loader)):
@@ -261,6 +261,7 @@ def main():
             scheduler.step()
 
         train_metrics = metrics_from_sums(reduce_metrics(running, device))
+        train_metrics["lr"] = float(optimizer.param_groups[0]["lr"])
         history.append({"split": "train", "epoch": epoch + 1, **train_metrics})
         if is_main_process():
             logger.info(
@@ -296,6 +297,9 @@ def main():
                         history,
                     )
 
+        if is_main_process():
+            save_history(history, run_dir)
+
         if is_main_process() and ((epoch + 1) % checkpoint_interval == 0 or epoch + 1 == epochs):
             save_checkpoint(
                 run_dir / "checkpoints" / "latest.pt",
@@ -306,10 +310,6 @@ def main():
                 epoch,
                 best_val_loss,
                 history,
-            )
-            (run_dir / "history.json").write_text(
-                json.dumps(history, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
             )
 
     cleanup_distributed()

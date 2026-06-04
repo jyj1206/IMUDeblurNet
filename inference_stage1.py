@@ -18,11 +18,11 @@ from utils.utils_eval import (
     save_csv,
     save_json,
 )
-from utils.utils_visualization import make_stage1_v_visualization, write_image
+from utils.utils_visualization import make_stage1_gyro_visualization, write_image
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Stage1 blur-to-V inference with V visualization.")
+    parser = argparse.ArgumentParser(description="Stage1 blur-to-gyro inference with gyro visualization.")
     parser.add_argument("--config", default="config/stage1_v.yaml")
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--split", default=None)
@@ -70,8 +70,8 @@ def main():
         total_batches = min(total_batches, math.ceil(int(args.limit) / max(1, int(args.batch_size))))
     for batch in tqdm(loader, total=total_batches, desc="stage1 inference"):
         image = batch["image"].to(device, non_blocking=True).float()
-        target_v = batch.get("v")
-        pred_v = model(image)["v"].detach().cpu()
+        target_gyro = batch.get("gyro")
+        pred_gyro = model(image)["gyro"].detach().cpu()
         batch_size = image.shape[0]
 
         stems = batch_meta_list(batch, "stem", batch_size, "sample")
@@ -81,13 +81,13 @@ def main():
         for idx in range(batch_size):
             if args.limit is not None and saved >= int(args.limit):
                 break
-            target = target_v[idx] if target_v is not None else None
-            mae = float((pred_v[idx] - target).abs().mean()) if target is not None else None
+            target = target_gyro[idx] if target_gyro is not None else None
+            mae = float((pred_gyro[idx] - target).abs().mean()) if target is not None else None
             name = safe_name(f"{indices[idx]:06d}", types[idx], stems[idx])
-            visual = make_stage1_v_visualization(
+            visual = make_stage1_gyro_visualization(
                 batch["image"][idx],
-                pred_v[idx],
-                target_v=target,
+                pred_gyro[idx],
+                target_gyro=target,
                 title=f"{types[idx]} / {stems[idx]}",
                 mean=image_cfg.get("mean"),
                 std=image_cfg.get("std"),
@@ -102,10 +102,10 @@ def main():
                 "visual_path": str(visual_path),
                 "mae": "" if mae is None else f"{mae:.8f}",
             }
-            for v_idx, vector in enumerate(pred_v[idx].numpy()):
-                row[f"pred_v{v_idx}_x"] = f"{vector[0]:.8f}"
-                row[f"pred_v{v_idx}_y"] = f"{vector[1]:.8f}"
-                row[f"pred_v{v_idx}_z"] = f"{vector[2]:.8f}"
+            for gyro_idx, vector in enumerate(pred_gyro[idx].numpy()):
+                row[f"pred_gyro{gyro_idx}_x"] = f"{vector[0]:.8f}"
+                row[f"pred_gyro{gyro_idx}_y"] = f"{vector[1]:.8f}"
+                row[f"pred_gyro{gyro_idx}_z"] = f"{vector[2]:.8f}"
             rows.append(row)
             saved += 1
 

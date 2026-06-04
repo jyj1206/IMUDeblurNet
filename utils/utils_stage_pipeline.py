@@ -68,7 +68,7 @@ class Stage1Stage2PairedDataset(Dataset):
         num_vectors=7,
         vector_start=0,
         vector_dim=3,
-        load_target_v=False,
+        load_target_gyro=False,
         default_dt=1.0 / 240.0,
     ):
         self.dataset_root = Path(dataset_root)
@@ -80,7 +80,7 @@ class Stage1Stage2PairedDataset(Dataset):
         self.num_vectors = int(num_vectors)
         self.vector_start = int(vector_start)
         self.vector_dim = int(vector_dim)
-        self.load_target_v = bool(load_target_v)
+        self.load_target_gyro = bool(load_target_gyro)
         self.default_dt = float(default_dt)
         self.sensor_cache = {}
         self.timestamp_cache = {}
@@ -120,7 +120,7 @@ class Stage1Stage2PairedDataset(Dataset):
     def _load_sensor_windows(self, row):
         scene_dir = row.get("scene_dir", "")
         if not scene_dir:
-            raise FileNotFoundError("V target loading needs scene_dir in metadata.")
+            raise FileNotFoundError("gyro target loading needs scene_dir in metadata.")
         if scene_dir not in self.sensor_cache:
             path = self.split_root / scene_dir / "sensor_windows.npy"
             if not path.exists():
@@ -128,20 +128,20 @@ class Stage1Stage2PairedDataset(Dataset):
             self.sensor_cache[scene_dir] = np.load(path, mmap_mode="r")
         return self.sensor_cache[scene_dir]
 
-    def _load_target_v(self, row):
+    def _load_target_gyro(self, row):
         sensor_windows = self._load_sensor_windows(row)
         sensor_idx = self._sensor_idx(row)
         end = self.vector_start + self.vector_dim
-        target_v = np.asarray(
+        target_gyro = np.asarray(
             sensor_windows[sensor_idx, : self.num_vectors, self.vector_start:end],
             dtype=np.float32,
         )
-        if target_v.shape != (self.num_vectors, self.vector_dim):
+        if target_gyro.shape != (self.num_vectors, self.vector_dim):
             raise ValueError(
-                f"V target shape must be {(self.num_vectors, self.vector_dim)}, "
-                f"got {target_v.shape}"
+                f"gyro target shape must be {(self.num_vectors, self.vector_dim)}, "
+                f"got {target_gyro.shape}"
             )
-        return torch.from_numpy(np.ascontiguousarray(target_v))
+        return torch.from_numpy(np.ascontiguousarray(target_gyro))
 
     def _load_timestamp_window(self, row):
         scene_dir = row.get("scene_dir", "")
@@ -196,8 +196,10 @@ class Stage1Stage2PairedDataset(Dataset):
             "timestamp_window": self._load_timestamp_window(row),
             "meta": self._sample_meta(index, row, lq_path, gt_path),
         }
-        if self.load_target_v:
-            sample["v"] = self._load_target_v(row)
+        if self.load_target_gyro:
+            gyro = self._load_target_gyro(row)
+            sample["gyro"] = gyro
+            sample["v"] = gyro
         return sample
 
 
@@ -205,9 +207,12 @@ def build_stage1_stage2_dataset(
     stage1_config,
     stage2_config,
     split=None,
-    load_target_v=False,
+    load_target_gyro=False,
+    load_target_v=None,
     default_dt=1.0 / 240.0,
 ):
+    if load_target_v is not None:
+        load_target_gyro = load_target_v
     dataset_cfg = stage2_config["dataset"]
     image_cfg = stage1_config.get("image", {})
     target_cfg = stage1_config.get("target", {})
@@ -221,7 +226,7 @@ def build_stage1_stage2_dataset(
         num_vectors=target_cfg.get("num_vectors", 7),
         vector_start=target_cfg.get("vector_start", 0),
         vector_dim=target_cfg.get("vector_dim", 3),
-        load_target_v=load_target_v,
+        load_target_gyro=load_target_gyro,
         default_dt=default_dt,
     )
 
@@ -233,16 +238,19 @@ def build_stage1_stage2_loader(
     batch_size=None,
     num_workers=None,
     device=None,
-    load_target_v=False,
+    load_target_gyro=False,
+    load_target_v=None,
     default_dt=1.0 / 240.0,
 ):
+    if load_target_v is not None:
+        load_target_gyro = load_target_v
     val_cfg = stage2_config.get("validation", {})
     dataset_cfg = stage2_config.get("dataset", {})
     dataset = build_stage1_stage2_dataset(
         stage1_config,
         stage2_config,
         split=split,
-        load_target_v=load_target_v,
+        load_target_gyro=load_target_gyro,
         default_dt=default_dt,
     )
     loader = DataLoader(
@@ -281,24 +289,24 @@ def load_stage1_stage2_models(
     return stage1_model, stage2_model, {"stage1": stage1_report, "stage2": stage2_report}
 
 
-def predicted_v_to_motion_field(
-    pred_v,
+def predicted_gyro_to_cmf(
+    pred_gyro,
     image_hw,
     timestamp_windows,
     downsample=2,
     default_dt=1.0 / 240.0,
     device=None,
 ):
-    if pred_v.ndim != 3:
-        raise ValueError(f"pred_v must be BxNx3, got {tuple(pred_v.shape)}")
+    if pred_gyro.ndim != 3:
+        raise ValueError(f"pred_gyro must be BxNx3, got {tuple(pred_gyro.shape)}")
 
     height, width = int(image_hw[0]), int(image_hw[1])
     center_vectors = build_center_vectors(height, width, int(downsample))
-    pred_v_np = pred_v.detach().float().cpu().numpy()
+    pred_gyro_np = pred_gyro.detach().float().cpu().numpy()
     timestamp_np = timestamp_windows.detach().float().cpu().numpy()
 
     motion_fields = []
-    for gyro_window, timestamp_window in zip(pred_v_np, timestamp_np):
+    for gyro_window, timestamp_window in zip(pred_gyro_np, timestamp_np):
         motion_field = make_camera_motion_field(
             gyro_window=gyro_window,
             timestamp_window=timestamp_window,
@@ -309,7 +317,11 @@ def predicted_v_to_motion_field(
         motion_fields.append(torch.from_numpy(np.ascontiguousarray(motion_field)))
 
     motion = torch.stack(motion_fields, dim=0)
-    return motion.to(device=device or pred_v.device, dtype=pred_v.dtype)
+    return motion.to(device=device or pred_gyro.device, dtype=pred_gyro.dtype)
+
+
+def predicted_v_to_motion_field(*args, **kwargs):
+    return predicted_gyro_to_cmf(*args, **kwargs)
 
 
 @torch.no_grad()
@@ -325,19 +337,21 @@ def run_stage1_stage2_batch(
     blur = batch["lq"].to(device, non_blocking=True).float()
     timestamp_windows = batch["timestamp_window"]
 
-    pred_v = stage1_model(stage1_image)["v"]
-    motion_field = predicted_v_to_motion_field(
-        pred_v,
+    pred_gyro = stage1_model(stage1_image)["gyro"]
+    cmf = predicted_gyro_to_cmf(
+        pred_gyro,
         image_hw=blur.shape[-2:],
         timestamp_windows=timestamp_windows,
         downsample=stage2_config.get("dataset", {}).get("motion_downsample", 2),
         default_dt=default_dt,
         device=device,
     )
-    pred_raw = stage2_model(blur, motion_field)
+    pred_raw = stage2_model(blur, cmf)
     return {
-        "pred_v": pred_v,
-        "motion_field": motion_field,
+        "pred_gyro": pred_gyro,
+        "pred_v": pred_gyro,
+        "cmf": cmf,
+        "motion_field": cmf,
         "pred_raw": pred_raw,
         "pred": pred_raw.clamp(0.0, 1.0),
     }
