@@ -1,10 +1,10 @@
-# Stage 1 regularized freeze variant: train only the gyro regression head.
-# Epoch count is intentionally kept the same as config/stage1_v.yaml.
+# Stage 1 regularized variant: estimate gyro window from one blurred image.
+# Epoch count is intentionally kept the same as config/stage1_gyro.yaml.
 
 experiment:
-  name: stage1_gyro_regularized_freeze
+  name: stage1_gyro_regularized
   result_root: result
-  run_prefix: stage1_reg_freeze
+  run_prefix: stage1_reg
   output_dir: null
 
 dataset:
@@ -51,10 +51,10 @@ train:
   seed: 1234
 
 model:
-  name: stage1_cmf_estimation
+  name: stage1_gyro_estimation
   args:
     backbone_weights: weights/segnext_iaai.pth
-    freeze_backbone: true
+    freeze_backbone: false
     head_hidden: 512
     num_vectors: 7
     vector_dim: 3

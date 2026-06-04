@@ -13,7 +13,7 @@ from datasets.image_dataset_common import (
     scene_root,
 )
 from generate_camera_motion_field import build_center_vectors, make_camera_motion_field
-from models.stage1_cmf_estimation_model import build_stage1_model
+from models.stage1_gyro_estimation_model import build_stage1_model
 from models.stage2_deblur_model import build_model as build_stage2_model
 from utils.utils_eval import load_model_weights
 
@@ -199,7 +199,6 @@ class Stage1Stage2PairedDataset(Dataset):
         if self.load_target_gyro:
             gyro = self._load_target_gyro(row)
             sample["gyro"] = gyro
-            sample["v"] = gyro
         return sample
 
 
@@ -208,11 +207,8 @@ def build_stage1_stage2_dataset(
     stage2_config,
     split=None,
     load_target_gyro=False,
-    load_target_v=None,
     default_dt=1.0 / 240.0,
 ):
-    if load_target_v is not None:
-        load_target_gyro = load_target_v
     dataset_cfg = stage2_config["dataset"]
     image_cfg = stage1_config.get("image", {})
     target_cfg = stage1_config.get("target", {})
@@ -239,11 +235,8 @@ def build_stage1_stage2_loader(
     num_workers=None,
     device=None,
     load_target_gyro=False,
-    load_target_v=None,
     default_dt=1.0 / 240.0,
 ):
-    if load_target_v is not None:
-        load_target_gyro = load_target_v
     val_cfg = stage2_config.get("validation", {})
     dataset_cfg = stage2_config.get("dataset", {})
     dataset = build_stage1_stage2_dataset(
@@ -320,10 +313,6 @@ def predicted_gyro_to_cmf(
     return motion.to(device=device or pred_gyro.device, dtype=pred_gyro.dtype)
 
 
-def predicted_v_to_motion_field(*args, **kwargs):
-    return predicted_gyro_to_cmf(*args, **kwargs)
-
-
 @torch.no_grad()
 def run_stage1_stage2_batch(
     stage1_model,
@@ -349,7 +338,6 @@ def run_stage1_stage2_batch(
     pred_raw = stage2_model(blur, cmf)
     return {
         "pred_gyro": pred_gyro,
-        "pred_v": pred_gyro,
         "cmf": cmf,
         "motion_field": cmf,
         "pred_raw": pred_raw,

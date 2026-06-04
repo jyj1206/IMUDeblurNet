@@ -42,7 +42,7 @@ def _normalize_image(image, mean, std):
     return (image - mean) / std
 
 
-class Stage1VDataset(Dataset):
+class Stage1GyroDataset(Dataset):
     def __init__(
         self,
         dataset_root,
@@ -141,7 +141,6 @@ class Stage1VDataset(Dataset):
         return {
             "image": image,
             "gyro": gyro,
-            "v": gyro,
             "meta": self._sample_meta(index, row, image_path),
         }
 
@@ -150,7 +149,7 @@ def build_stage1_dataset(config, split=None):
     dataset_cfg = config["dataset"]
     target_cfg = config.get("target", {})
     image_cfg = config.get("image", {})
-    return Stage1VDataset(
+    return Stage1GyroDataset(
         dataset_root=dataset_cfg["root"],
         split=split or dataset_cfg.get("split", "train"),
         metadata_name=dataset_cfg.get("metadata_name", "metadata.csv"),

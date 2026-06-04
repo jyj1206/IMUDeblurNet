@@ -3,7 +3,7 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from .modules.stage1_cmf_head import GlobalVHead
+from .modules.stage1_gyro_head import GlobalGyroHead
 from .modules.stage1_mscan import MSCAN
 
 
@@ -59,7 +59,7 @@ def _load_mscan_backbone(backbone, weights_path):
     }
 
 
-class Stage1CMFEstimationNet(nn.Module):
+class Stage1GyroEstimationNet(nn.Module):
     def __init__(
         self,
         head_hidden=512,
@@ -71,7 +71,7 @@ class Stage1CMFEstimationNet(nn.Module):
     ):
         super().__init__()
         self.backbone = MSCAN()
-        self.v_head = GlobalVHead(
+        self.gyro_head = GlobalGyroHead(
             in_channels=512,
             hidden_channels=head_hidden,
             num_vectors=num_vectors,
@@ -86,8 +86,8 @@ class Stage1CMFEstimationNet(nn.Module):
 
     def forward(self, blur):
         features = self.backbone({"image": blur})["features"]
-        gyro = self.v_head(features[-1])
-        return {"gyro": gyro, "v": gyro}
+        gyro = self.gyro_head(features[-1])
+        return {"gyro": gyro}
 
 
 def _as_dict(value):
@@ -131,20 +131,25 @@ def _model_args(model_cfg):
 
     unknown = sorted(set(kwargs) - allowed)
     if unknown:
-        raise ValueError(f"Unknown Stage1CMFEstimationNet args: {unknown}")
+        raise ValueError(f"Unknown Stage1GyroEstimationNet args: {unknown}")
     return kwargs
 
 
 def build_stage1_model(config=None):
     model_cfg = _model_config(config)
-    name = model_cfg.get("name", "stage1_cmf_estimation").lower()
-    if name not in ("stage1_cmf_estimation", "blur_to_v", "blur_to_v_net"):
+    name = model_cfg.get("name", "stage1_gyro_estimation").lower()
+    allowed_names = (
+        "stage1_gyro_estimation",
+        "blur_to_gyro",
+        "blur_to_gyro_net",
+    )
+    if name not in allowed_names:
         raise ValueError(f"Unknown stage1 model.name: {name}")
-    return Stage1CMFEstimationNet(**_model_args(model_cfg))
+    return Stage1GyroEstimationNet(**_model_args(model_cfg))
 
 
 if __name__ == "__main__":
-    model = Stage1CMFEstimationNet()
+    model = Stage1GyroEstimationNet()
     blur = torch.randn(2, 3, 224, 320)
     out = model(blur)
-    print(out["v"].shape)
+    print(out["gyro"].shape)

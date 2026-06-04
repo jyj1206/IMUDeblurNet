@@ -1,7 +1,7 @@
 from torch import nn
 
 
-class GlobalVHead(nn.Module):
+class GlobalGyroHead(nn.Module):
     def __init__(
         self,
         in_channels,
@@ -24,5 +24,5 @@ class GlobalVHead(nn.Module):
         )
 
     def forward(self, x):
-        v = self.body(x)
-        return v.view(v.shape[0], self.num_vectors, self.vector_dim)
+        gyro = self.body(x)
+        return gyro.view(gyro.shape[0], self.num_vectors, self.vector_dim)

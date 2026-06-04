@@ -22,7 +22,6 @@ from .utils_stage_pipeline import (
     build_stage1_stage2_loader,
     load_stage1_stage2_models,
     predicted_gyro_to_cmf,
-    predicted_v_to_motion_field,
     resolve_device,
     run_stage1_stage2_batch,
 )
@@ -52,7 +51,6 @@ __all__ = [
     "predicted_gyro_to_cmf",
     "normalize_config",
     "prepare_run_dir",
-    "predicted_v_to_motion_field",
     "reduce_mean_tensor",
     "resolve_device",
     "resolve_training_length",

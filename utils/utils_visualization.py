@@ -144,12 +144,6 @@ def make_stage1_gyro_visualization(
     return np.concatenate([header, image_bgr, panel], axis=0)
 
 
-def make_stage1_v_visualization(*args, **kwargs):
-    if "target_v" in kwargs and "target_gyro" not in kwargs:
-        kwargs["target_gyro"] = kwargs.pop("target_v")
-    return make_stage1_gyro_visualization(*args, **kwargs)
-
-
 def make_cmf_visualization(
     image,
     motion_field,

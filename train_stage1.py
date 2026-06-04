@@ -5,8 +5,8 @@ from pathlib import Path
 import torch
 from tqdm import tqdm
 
-from datasets.stage1_v_dataset import build_stage1_dataloader
-from models.stage1_cmf_estimation_model import build_stage1_model
+from datasets.stage1_gyro_dataset import build_stage1_dataloader
+from models.stage1_gyro_estimation_model import build_stage1_model
 from utils import (
     build_logger,
     cleanup_distributed,
@@ -22,7 +22,7 @@ from utils import (
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config/stage1_v.yaml")
+    parser.add_argument("--config", default="config/stage1_gyro.yaml")
     parser.add_argument("--resume", default=None)
     return parser.parse_args()
 

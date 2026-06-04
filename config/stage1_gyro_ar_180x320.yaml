@@ -1,10 +1,9 @@
-# Stage 1 regularized variant: estimate gyro window from one blurred image.
-# Epoch count is intentionally kept the same as config/stage1_v.yaml.
+# Stage 1 aspect-ratio variant: 16:9 resize without changing the model.
 
 experiment:
-  name: stage1_gyro_regularized
+  name: stage1_gyro_ar_180x320
   result_root: result
-  run_prefix: stage1_reg
+  run_prefix: stage1_ar180
   output_dir: null
 
 dataset:
@@ -25,7 +24,7 @@ validation:
 
 image:
   size:
-    - 224
+    - 180
     - 320
   mean:
     - 0.485
@@ -51,26 +50,26 @@ train:
   seed: 1234
 
 model:
-  name: stage1_cmf_estimation
+  name: stage1_gyro_estimation
   args:
     backbone_weights: weights/segnext_iaai.pth
     freeze_backbone: false
     head_hidden: 512
     num_vectors: 7
     vector_dim: 3
-    dropout: 0.2
+    dropout: 0.1
 
 optimizer:
   name: adamw
-  lr: 0.00005
+  lr: 0.0001
   betas:
     - 0.9
     - 0.999
-  weight_decay: 0.0005
+  weight_decay: 0.0001
 
 scheduler:
   name: onecycle
-  max_lr: 0.00005
+  max_lr: 0.0001
   pct_start: 0.3
   div_factor: 25.0
   final_div_factor: 10000.0

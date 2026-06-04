@@ -34,7 +34,7 @@ from utils.utils_visualization import (
 
 def parse_args():
     parser = argparse.ArgumentParser(description="End-to-end inference: B -> gyro, gyro -> CMF, B + CMF -> S.")
-    parser.add_argument("--stage1-config", default="config/stage1_v.yaml")
+    parser.add_argument("--stage1-config", default="config/stage1_gyro.yaml")
     parser.add_argument("--stage1-checkpoint", default=None)
     parser.add_argument("--stage2-config", default="config/stage2_deblur.yaml")
     parser.add_argument("--stage2-checkpoint", default=None)

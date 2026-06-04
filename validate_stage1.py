@@ -5,8 +5,8 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from datasets.stage1_v_dataset import build_stage1_dataset
-from models.stage1_cmf_estimation_model import build_stage1_model
+from datasets.stage1_gyro_dataset import build_stage1_dataset
+from models.stage1_gyro_estimation_model import build_stage1_model
 from utils import load_config
 from utils.utils_eval import (
     GroupedMetricAverager,
@@ -24,7 +24,7 @@ from utils.utils_visualization import make_stage1_gyro_visualization, write_imag
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Stage1 gyro validation by motion type.")
-    parser.add_argument("--config", default="config/stage1_v.yaml")
+    parser.add_argument("--config", default="config/stage1_gyro.yaml")
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--split", default=None)
     parser.add_argument("--output-root", default="runs")
