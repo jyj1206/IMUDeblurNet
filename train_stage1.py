@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 from tqdm import tqdm
 
-from datasets.stage1_gyro_dataset import build_stage1_dataloader
+from datasets.stage1_gyro_dataset import build_stage1_loader
 from models.stage1_gyro_estimation_model import build_stage1_model
 from utils import (
     build_logger,
@@ -181,7 +181,7 @@ def main():
     logger.info(f"run_dir={run_dir}")
     logger.info(f"device={device}, distributed={distributed}")
 
-    train_dataset, train_loader, train_sampler = build_stage1_dataloader(
+    train_dataset, train_loader, train_sampler = build_stage1_loader(
         config,
         split=config["dataset"].get("split", "train"),
         distributed=distributed,
@@ -190,7 +190,7 @@ def main():
     )
     val_loader = None
     if config.get("validation", {}).get("enabled", True):
-        _, val_loader, _ = build_stage1_dataloader(
+        _, val_loader, _ = build_stage1_loader(
             config,
             split=config["validation"].get("split", "val"),
             distributed=False,

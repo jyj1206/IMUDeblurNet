@@ -162,7 +162,7 @@ def build_stage1_dataset(config, split=None):
     )
 
 
-def build_stage1_dataloader(config, split=None, distributed=False, device=None, is_train=True):
+def build_stage1_loader(config, split=None, distributed=False, device=None, is_train=True):
     dataset_cfg = config["dataset"]
     loader_cfg = dataset_cfg if is_train else {**dataset_cfg, **config.get("validation", {})}
     dataset = build_stage1_dataset(config, split=split or loader_cfg.get("split"))

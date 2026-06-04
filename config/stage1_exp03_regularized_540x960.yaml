@@ -1,10 +1,9 @@
-# Stage 1 regularized variant: estimate gyro window from one blurred image.
-# Epoch count is intentionally kept the same as config/stage1_gyro.yaml.
+# Stage1 experiment 03: regularized + 540x960 resize.
 
 experiment:
-  name: stage1_gyro_regularized
+  name: stage1_exp03_regularized_540x960
   result_root: result
-  run_prefix: stage1_reg
+  run_prefix: stage1_exp03_reg_540x960
   output_dir: null
 
 dataset:
@@ -25,8 +24,8 @@ validation:
 
 image:
   size:
-    - 224
-    - 320
+    - 540
+    - 960
   mean:
     - 0.485
     - 0.456

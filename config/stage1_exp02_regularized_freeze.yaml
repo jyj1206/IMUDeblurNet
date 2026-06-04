@@ -1,10 +1,9 @@
-# Stage 1 regularized freeze variant: train only the gyro regression head.
-# Epoch count is intentionally kept the same as config/stage1_gyro.yaml.
+# Stage1 experiment 02: regularized + frozen backbone.
 
 experiment:
-  name: stage1_gyro_regularized_freeze
+  name: stage1_exp02_regularized_freeze
   result_root: result
-  run_prefix: stage1_reg_freeze
+  run_prefix: stage1_exp02_reg_freeze
   output_dir: null
 
 dataset:

@@ -1,9 +1,10 @@
-# Stage 1 aspect-ratio variant: 16:9 resize without changing the model.
+# Stage1 experiment 04: regularized + 360x480 resize.
+# Listed for the /4-resolution plan; skip running until needed.
 
 experiment:
-  name: stage1_gyro_ar_180x320
+  name: stage1_exp04_regularized_360x480
   result_root: result
-  run_prefix: stage1_ar180
+  run_prefix: stage1_exp04_reg_360x480
   output_dir: null
 
 dataset:
@@ -24,8 +25,8 @@ validation:
 
 image:
   size:
-    - 180
-    - 320
+    - 360
+    - 480
   mean:
     - 0.485
     - 0.456
@@ -57,19 +58,19 @@ model:
     head_hidden: 512
     num_vectors: 7
     vector_dim: 3
-    dropout: 0.1
+    dropout: 0.2
 
 optimizer:
   name: adamw
-  lr: 0.0001
+  lr: 0.00005
   betas:
     - 0.9
     - 0.999
-  weight_decay: 0.0001
+  weight_decay: 0.0005
 
 scheduler:
   name: onecycle
-  max_lr: 0.0001
+  max_lr: 0.00005
   pct_start: 0.3
   div_factor: 25.0
   final_div_factor: 10000.0

@@ -19,7 +19,6 @@ from .utils_metrics import batch_psnr, batch_ssim, evaluate_model, sample_psnr, 
 from .utils_optim import build_optimizer, build_scheduler
 from .utils_plot import append_history, save_history
 from .utils_stage_pipeline import (
-    build_stage1_stage2_loader,
     load_stage1_stage2_models,
     predicted_gyro_to_cmf,
     resolve_device,
@@ -38,7 +37,6 @@ __all__ = [
     "build_criterion",
     "build_optimizer",
     "build_scheduler",
-    "build_stage1_stage2_loader",
     "checkpoint_iteration",
     "cleanup_distributed",
     "evaluate_model",

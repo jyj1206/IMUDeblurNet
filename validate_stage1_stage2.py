@@ -4,8 +4,8 @@ from pathlib import Path
 import torch
 from tqdm import tqdm
 
+from datasets import build_stage1_stage2_loader
 from utils import (
-    build_stage1_stage2_loader,
     load_config,
     load_stage1_stage2_models,
     normalize_config,

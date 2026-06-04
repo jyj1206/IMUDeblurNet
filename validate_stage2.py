@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from datasets import build_dataset
+from datasets import build_stage2_dataset
 from models.stage2_deblur_model import build_model
 from utils import build_criterion, load_config, normalize_config
 from utils.utils_eval import (
@@ -55,7 +55,7 @@ def main():
 
     split = args.split or cfg.get("validation", {}).get("split") or "val"
     val_cfg = cfg.get("validation", {})
-    dataset = build_dataset(cfg, split=split)
+    dataset = build_stage2_dataset(cfg, split=split)
     loader = DataLoader(
         dataset,
         batch_size=int(args.batch_size or val_cfg.get("batch_size", cfg["dataset"].get("batch_size", 1))),

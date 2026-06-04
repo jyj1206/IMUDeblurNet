@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 from tqdm import tqdm
 
-from datasets import build_dataloader
+from datasets import build_stage2_loader
 from models.stage2_deblur_model import build_model
 from utils import (
     append_history,
@@ -96,7 +96,7 @@ def main():
     logger.info(f"run_dir={run_dir}")
     logger.info(f"device={device}, distributed={distributed}")
 
-    train_dataset, loader, sampler = build_dataloader(
+    train_dataset, loader, sampler = build_stage2_loader(
         cfg,
         split=cfg["dataset"].get("split", "train"),
         distributed=distributed,
@@ -107,7 +107,7 @@ def main():
     val_loader = None
     validation_cfg = cfg.get("validation", {})
     if validation_cfg.get("enabled", True):
-        _, val_loader, _ = build_dataloader(
+        _, val_loader, _ = build_stage2_loader(
             cfg,
             split=validation_cfg.get("split", "val"),
             distributed=False,
