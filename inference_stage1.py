@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from datasets.stage1_gyro_dataset import build_stage1_dataset
 from models.stage1_gyro_estimation_model import build_stage1_model
-from utils import load_config
+from utils import apply_dataset_overrides, load_eval_config
 from utils.utils_eval import (
     batch_meta_int_list,
     batch_meta_list,
@@ -23,11 +23,13 @@ from utils.utils_visualization import make_stage1_gyro_visualization, write_imag
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Stage1 blur-to-gyro inference with gyro visualization.")
-    parser.add_argument("--config", default="config/stage1_gyro.yaml")
+    parser.add_argument("--config", default=None)
     parser.add_argument("--checkpoint", default=None)
+    parser.add_argument("--dataset-root", default=None)
+    parser.add_argument("--metadata-name", default=None)
     parser.add_argument("--split", default=None)
     parser.add_argument("--output-root", default="runs")
-    parser.add_argument("--limit", type=int, default=32)
+    parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default="auto")
@@ -44,8 +46,14 @@ def resolve_device(name):
 @torch.no_grad()
 def main():
     args = parse_args()
-    cfg = load_config(args.config)
     device = resolve_device(args.device)
+    cfg, config_source = load_eval_config(
+        args.config,
+        args.checkpoint,
+        device=device,
+        normalize=False,
+    )
+    cfg = apply_dataset_overrides(cfg, args)
     run_dir = create_run_dir(args.output_root, "stage1_inference")
     visual_dir = run_dir / "visuals"
 
@@ -117,8 +125,11 @@ def main():
     save_json(
         run_dir / "summary.json",
         {
-            "config": str(Path(args.config)),
+            "config": str(Path(args.config)) if args.config else None,
+            "config_source": config_source,
             "checkpoint": args.checkpoint,
+            "dataset_root": cfg.get("dataset", {}).get("root"),
+            "metadata_name": cfg.get("dataset", {}).get("metadata_name"),
             "split": split,
             "saved": saved,
             "load_report": load_report,

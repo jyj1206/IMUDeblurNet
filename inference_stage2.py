@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from datasets import build_stage2_dataset
 from models.stage2_deblur_model import build_model
-from utils import load_config, normalize_config
+from utils import apply_dataset_overrides, load_eval_config
 from utils.utils_eval import (
     MetricAverager,
     batch_meta_int_list,
@@ -25,11 +25,17 @@ from utils.utils_visualization import make_stage2_comparison, tensor_to_rgb_uint
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Stage2 deblur inference visualization.")
-    parser.add_argument("--config", default="config/stage2_deblur.yaml")
+    parser.add_argument("--config", default=None)
     parser.add_argument("--checkpoint", default=None)
+    parser.add_argument("--dataset-root", default=None)
+    parser.add_argument("--metadata-name", default=None)
+    parser.add_argument("--motion-field-root", default=None)
+    parser.add_argument("--motion-field-dir", default=None)
+    parser.add_argument("--motion-field-ext", default=None)
+    parser.add_argument("--motion-downsample", type=int, default=None)
     parser.add_argument("--split", default=None)
     parser.add_argument("--output-root", default="runs")
-    parser.add_argument("--limit", type=int, default=32)
+    parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default="auto")
@@ -46,8 +52,14 @@ def resolve_device(name):
 @torch.no_grad()
 def main():
     args = parse_args()
-    cfg = normalize_config(load_config(args.config))
     device = resolve_device(args.device)
+    cfg, config_source = load_eval_config(
+        args.config,
+        args.checkpoint,
+        device=device,
+        normalize=True,
+    )
+    cfg = apply_dataset_overrides(cfg, args, include_motion=True)
     run_dir = create_run_dir(args.output_root, "stage2_inference")
     visual_dir = run_dir / "visuals"
     output_dir = run_dir / "outputs"
@@ -128,8 +140,11 @@ def main():
         run_dir / "summary.json",
         {
             "overall": summary.as_dict(),
-            "config": str(Path(args.config)),
+            "config": str(Path(args.config)) if args.config else None,
+            "config_source": config_source,
             "checkpoint": args.checkpoint,
+            "dataset_root": cfg.get("dataset", {}).get("root"),
+            "metadata_name": cfg.get("dataset", {}).get("metadata_name"),
             "split": split,
             "saved": saved,
             "load_report": load_report,

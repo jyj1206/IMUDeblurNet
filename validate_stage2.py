@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from datasets import build_stage2_dataset
 from models.stage2_deblur_model import build_model
-from utils import build_criterion, load_config, normalize_config
+from utils import apply_dataset_overrides, build_criterion, load_eval_config
 from utils.utils_eval import (
     GroupedMetricAverager,
     MetricAverager,
@@ -26,12 +26,18 @@ from utils.utils_visualization import make_stage2_comparison, tensor_to_rgb_uint
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Stage2 deblur validation with PSNR/SSIM by type.")
-    parser.add_argument("--config", default="config/stage2_deblur.yaml")
+    parser.add_argument("--config", default=None)
     parser.add_argument("--checkpoint", default=None)
+    parser.add_argument("--dataset-root", default=None)
+    parser.add_argument("--metadata-name", default=None)
+    parser.add_argument("--motion-field-root", default=None)
+    parser.add_argument("--motion-field-dir", default=None)
+    parser.add_argument("--motion-field-ext", default=None)
+    parser.add_argument("--motion-downsample", type=int, default=None)
     parser.add_argument("--split", default=None)
     parser.add_argument("--output-root", default="runs")
     parser.add_argument("--max-batches", type=int, default=None)
-    parser.add_argument("--save-limit", type=int, default=24)
+    parser.add_argument("--save-limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--device", default="auto")
@@ -65,8 +71,14 @@ def format_metric(name, value):
 @torch.no_grad()
 def main():
     args = parse_args()
-    cfg = normalize_config(load_config(args.config))
     device = resolve_device(args.device)
+    cfg, config_source = load_eval_config(
+        args.config,
+        args.checkpoint,
+        device=device,
+        normalize=True,
+    )
+    cfg = apply_dataset_overrides(cfg, args, include_motion=True)
     run_dir = create_run_dir(args.output_root, "stage2_validation")
     visual_dir = run_dir / "visuals"
     output_dir = run_dir / "outputs"
@@ -145,7 +157,7 @@ def main():
                 row[metric_name] = format_metric(metric_name, metrics[metric_name])
             sample_rows.append(row)
 
-            if saved < int(args.save_limit):
+            if args.save_limit is None or saved < int(args.save_limit):
                 name = safe_name(f"{indices[idx]:06d}", types[idx], stems[idx])
                 visual = make_stage2_comparison(
                     blur[idx].detach().cpu(),
@@ -165,8 +177,11 @@ def main():
     metrics = {
         "overall": overall.as_dict(),
         "by_type": by_type.as_dict(),
-        "config": str(Path(args.config)),
+        "config": str(Path(args.config)) if args.config else None,
+        "config_source": config_source,
         "checkpoint": args.checkpoint,
+        "dataset_root": cfg.get("dataset", {}).get("root"),
+        "metadata_name": cfg.get("dataset", {}).get("metadata_name"),
         "split": split,
         "max_batches": max_batches,
         "extra_metrics": extra_metric_names,

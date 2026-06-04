@@ -60,6 +60,9 @@ class Stage1Stage2Dataset(Dataset):
         vector_dim=3,
         load_target_gyro=False,
         default_dt=1.0 / 240.0,
+        motion_field_root=None,
+        motion_field_dir="camera_motion_field",
+        motion_field_ext="npy",
     ):
         self.dataset_root = Path(dataset_root)
         self.split = resolve_split_name(self.dataset_root, split)
@@ -72,6 +75,9 @@ class Stage1Stage2Dataset(Dataset):
         self.vector_dim = int(vector_dim)
         self.load_target_gyro = bool(load_target_gyro)
         self.default_dt = float(default_dt)
+        self.motion_field_root = Path(motion_field_root) if motion_field_root else self.dataset_root
+        self.motion_field_dir = motion_field_dir
+        self.motion_field_ext = motion_field_ext
         self.sensor_cache = {}
         self.timestamp_cache = {}
 
@@ -104,6 +110,12 @@ class Stage1Stage2Dataset(Dataset):
             return root / row["blur_path"], root / row["sharp_path"]
         return root / row["center_blur_path"], root / row["target_sharp_path"]
 
+    def _motion_field_path(self, row):
+        scene_dir = row.get("scene_dir", "")
+        blur_path = row["blur_path"] if self.layout == "paired" else row["center_blur_path"]
+        motion_name = f"{Path(blur_path).stem}.{self.motion_field_ext}"
+        return self.motion_field_root / self.split / self.motion_field_dir / scene_dir / motion_name
+
     def _sensor_idx(self, row):
         return int(row.get("sensor_idx") or row.get("center_sensor_idx") or 0)
 
@@ -131,7 +143,7 @@ class Stage1Stage2Dataset(Dataset):
                 f"gyro target shape must be {(self.num_vectors, self.vector_dim)}, "
                 f"got {target_gyro.shape}"
             )
-        return torch.from_numpy(np.ascontiguousarray(target_gyro))
+        return torch.from_numpy(np.array(target_gyro, dtype=np.float32, copy=True))
 
     def _load_timestamp_window(self, row):
         scene_dir = row.get("scene_dir", "")
@@ -152,7 +164,7 @@ class Stage1Stage2Dataset(Dataset):
             window = np.asarray(timestamps[sensor_idx, : self.num_vectors], dtype=np.float32)
             if window.shape[0] != self.num_vectors:
                 window = _default_timestamp_window(self.num_vectors, self.default_dt)
-        return torch.from_numpy(np.ascontiguousarray(window))
+        return torch.from_numpy(np.array(window, dtype=np.float32, copy=True))
 
     def _sample_meta(self, index, row, lq_path, gt_path):
         return {
@@ -162,6 +174,7 @@ class Stage1Stage2Dataset(Dataset):
             "stem": Path(lq_path).stem,
             "lq_path": str(lq_path),
             "gt_path": str(gt_path),
+            "motion_field_path": str(self._motion_field_path(row)),
             "sensor_idx": self._sensor_idx(row),
         }
 
@@ -213,6 +226,9 @@ def build_stage1_stage2_dataset(
         vector_dim=target_cfg.get("vector_dim", 3),
         load_target_gyro=load_target_gyro,
         default_dt=default_dt,
+        motion_field_root=dataset_cfg.get("motion_field_root"),
+        motion_field_dir=dataset_cfg.get("motion_field_dir", "camera_motion_field"),
+        motion_field_ext=dataset_cfg.get("motion_field_ext", "npy"),
     )
 
 

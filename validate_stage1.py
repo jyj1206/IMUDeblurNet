@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from datasets.stage1_gyro_dataset import build_stage1_dataset
 from models.stage1_gyro_estimation_model import build_stage1_model
-from utils import load_config
+from utils import apply_dataset_overrides, load_eval_config
 from utils.utils_eval import (
     GroupedMetricAverager,
     MetricAverager,
@@ -24,12 +24,14 @@ from utils.utils_visualization import make_stage1_gyro_visualization, write_imag
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Stage1 gyro validation by motion type.")
-    parser.add_argument("--config", default="config/stage1_gyro.yaml")
+    parser.add_argument("--config", default=None)
     parser.add_argument("--checkpoint", default=None)
+    parser.add_argument("--dataset-root", default=None)
+    parser.add_argument("--metadata-name", default=None)
     parser.add_argument("--split", default=None)
     parser.add_argument("--output-root", default="runs")
     parser.add_argument("--max-batches", type=int, default=None)
-    parser.add_argument("--save-limit", type=int, default=24)
+    parser.add_argument("--save-limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--device", default="auto")
@@ -57,8 +59,14 @@ def build_loss(name):
 @torch.no_grad()
 def main():
     args = parse_args()
-    cfg = load_config(args.config)
     device = resolve_device(args.device)
+    cfg, config_source = load_eval_config(
+        args.config,
+        args.checkpoint,
+        device=device,
+        normalize=False,
+    )
+    cfg = apply_dataset_overrides(cfg, args)
     run_dir = create_run_dir(args.output_root, "stage1_validation")
     visual_dir = run_dir / "visuals"
 
@@ -122,7 +130,7 @@ def main():
             }
             sample_rows.append(row)
 
-            if saved < int(args.save_limit):
+            if args.save_limit is None or saved < int(args.save_limit):
                 name = safe_name(f"{indices[idx]:06d}", types[idx], stems[idx])
                 visual = make_stage1_gyro_visualization(
                     batch["image"][idx],
@@ -140,8 +148,11 @@ def main():
     metrics = {
         "overall": overall.as_dict(),
         "by_type": by_type.as_dict(),
-        "config": str(Path(args.config)),
+        "config": str(Path(args.config)) if args.config else None,
+        "config_source": config_source,
         "checkpoint": args.checkpoint,
+        "dataset_root": cfg.get("dataset", {}).get("root"),
+        "metadata_name": cfg.get("dataset", {}).get("metadata_name"),
         "split": split,
         "max_batches": max_batches,
         "load_report": load_report,

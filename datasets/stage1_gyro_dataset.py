@@ -116,7 +116,7 @@ class Stage1GyroDataset(Dataset):
             raise ValueError(
                 f"gyro target shape must be {(self.num_vectors, self.vector_dim)}, got {gyro.shape}"
             )
-        return torch.from_numpy(np.ascontiguousarray(gyro))
+        return torch.from_numpy(np.array(gyro, dtype=np.float32, copy=True))
 
     def _sample_meta(self, index, row, image_path):
         return {

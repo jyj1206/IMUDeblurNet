@@ -98,7 +98,7 @@ def build_scheduler(config, optimizer, steps_per_epoch, epochs):
 def reduce_metrics(metrics, device):
     if not torch.distributed.is_available() or not torch.distributed.is_initialized():
         return metrics
-    keys = ["loss_sum", "mae_sum", "count"]
+    keys = list(metrics.keys())
     values = torch.tensor([metrics[key] for key in keys], dtype=torch.float64, device=device)
     torch.distributed.all_reduce(values, op=torch.distributed.ReduceOp.SUM)
     return {key: float(value.detach().cpu()) for key, value in zip(keys, values)}
@@ -106,18 +106,29 @@ def reduce_metrics(metrics, device):
 
 def metrics_from_sums(metrics):
     count = max(1.0, metrics["count"])
-    return {
+    result = {
         "loss": metrics["loss_sum"] / count,
         "mae": metrics["mae_sum"] / count,
         "count": int(metrics["count"]),
     }
+    for key, value in metrics.items():
+        if key not in ("loss_sum", "mae_sum", "count"):
+            result[key] = int(value)
+    return result
 
 
 @torch.no_grad()
 def evaluate(model, loader, criterion, device, show_progress=False):
     was_training = model.training
     model.eval()
-    metrics = {"loss_sum": 0.0, "mae_sum": 0.0, "count": 0.0}
+    metrics = {
+        "loss_sum": 0.0,
+        "mae_sum": 0.0,
+        "count": 0.0,
+        "pred_nonfinite": 0.0,
+        "target_nonfinite": 0.0,
+        "loss_nonfinite": 0.0,
+    }
     batches = tqdm(loader, desc="val", leave=False, disable=not show_progress)
     for batch in batches:
         image = batch["image"].to(device, non_blocking=True).float()
@@ -125,6 +136,14 @@ def evaluate(model, loader, criterion, device, show_progress=False):
         pred_gyro = model(image)["gyro"]
         loss = criterion(pred_gyro, target_gyro)
         batch_size = image.shape[0]
+
+        pred_finite = torch.isfinite(pred_gyro).flatten(1).all(dim=1)
+        target_finite = torch.isfinite(target_gyro).flatten(1).all(dim=1)
+        metrics["pred_nonfinite"] += int((~pred_finite).sum().detach().cpu())
+        metrics["target_nonfinite"] += int((~target_finite).sum().detach().cpu())
+        if not torch.isfinite(loss):
+            metrics["loss_nonfinite"] += batch_size
+
         metrics["loss_sum"] += float(loss.detach().cpu()) * batch_size
         metrics["mae_sum"] += float((pred_gyro - target_gyro).abs().mean().detach().cpu()) * batch_size
         metrics["count"] += batch_size
@@ -292,9 +311,19 @@ def main():
             )
             history.append({"split": "val", "epoch": epoch + 1, **val_metrics})
             if is_main_process():
+                nonfinite_msg = ""
+                if any(
+                    int(val_metrics.get(key, 0)) > 0
+                    for key in ("pred_nonfinite", "target_nonfinite", "loss_nonfinite")
+                ):
+                    nonfinite_msg = (
+                        f" pred_nonfinite={int(val_metrics.get('pred_nonfinite', 0))}"
+                        f" target_nonfinite={int(val_metrics.get('target_nonfinite', 0))}"
+                        f" loss_nonfinite={int(val_metrics.get('loss_nonfinite', 0))}"
+                    )
                 logger.info(
                     f"epoch={epoch + 1}/{epochs} val_loss={val_metrics['loss']:.6f} "
-                    f"val_mae={val_metrics['mae']:.6f}"
+                    f"val_mae={val_metrics['mae']:.6f}{nonfinite_msg}"
                 )
                 if val_metrics["loss"] < best_val_loss:
                     best_val_loss = val_metrics["loss"]

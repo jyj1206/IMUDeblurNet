@@ -13,6 +13,7 @@ from .utils_dist import (
     reduce_mean_tensor,
     unwrap_model,
 )
+from .utils_eval_config import apply_dataset_overrides, load_eval_config
 from .utils_loss import PSNRLoss, build_criterion
 from .utils_logger import build_logger
 from .utils_metrics import batch_psnr, batch_ssim, evaluate_model, sample_psnr, sample_ssim
@@ -30,6 +31,7 @@ from .utils_yaml import load_config, save_config
 __all__ = [
     "PSNRLoss",
     "append_history",
+    "apply_dataset_overrides",
     "batch_psnr",
     "batch_ssim",
     "build_logger",
@@ -45,6 +47,7 @@ __all__ = [
     "is_main_process",
     "load_config",
     "load_checkpoint_state",
+    "load_eval_config",
     "load_stage1_stage2_models",
     "predicted_gyro_to_cmf",
     "normalize_config",

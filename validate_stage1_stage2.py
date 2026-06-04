@@ -1,14 +1,15 @@
 import argparse
 from pathlib import Path
 
+import numpy as np
 import torch
 from tqdm import tqdm
 
 from datasets import build_stage1_stage2_loader
 from utils import (
-    load_config,
+    apply_dataset_overrides,
+    load_eval_config,
     load_stage1_stage2_models,
-    normalize_config,
     resolve_device,
     run_stage1_stage2_batch,
 )
@@ -25,6 +26,7 @@ from utils.utils_eval import (
 from utils.utils_iqa import Stage2IqaMetrics, normalize_iqa_metric_names
 from utils.utils_metrics import sample_psnr, sample_ssim
 from utils.utils_visualization import (
+    make_cmf_comparison,
     make_cmf_visualization,
     make_stage1_gyro_visualization,
     make_stage2_comparison,
@@ -35,14 +37,17 @@ from utils.utils_visualization import (
 
 def parse_args():
     parser = argparse.ArgumentParser(description="End-to-end validation: B -> gyro, gyro -> CMF, B + CMF -> S.")
-    parser.add_argument("--stage1-config", default="config/stage1_gyro.yaml")
+    parser.add_argument("--stage1-config", default=None)
     parser.add_argument("--stage1-checkpoint", default=None)
-    parser.add_argument("--stage2-config", default="config/stage2_deblur.yaml")
+    parser.add_argument("--stage2-config", default=None)
     parser.add_argument("--stage2-checkpoint", default=None)
+    parser.add_argument("--dataset-root", default=None)
+    parser.add_argument("--metadata-name", default=None)
+    parser.add_argument("--motion-downsample", type=int, default=None)
     parser.add_argument("--split", default=None)
     parser.add_argument("--output-root", default="runs")
     parser.add_argument("--max-batches", type=int, default=None)
-    parser.add_argument("--save-limit", type=int, default=24)
+    parser.add_argument("--save-limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--device", default="auto")
@@ -81,16 +86,67 @@ def format_metric(name, value):
     return f"{float(value):.8f}"
 
 
+def load_motion_field(path):
+    path = Path(path)
+    if not path.exists():
+        return None
+    if path.suffix == ".npz":
+        with np.load(path) as data:
+            motion_field = data["motion_field"].astype(np.float32)
+    else:
+        motion_field = np.load(path).astype(np.float32)
+    if motion_field.ndim != 3:
+        raise ValueError(f"motion field must be HWC or CHW, got {motion_field.shape}: {path}")
+    if motion_field.shape[0] <= 64 and motion_field.shape[0] < motion_field.shape[-1]:
+        return torch.from_numpy(np.array(motion_field, dtype=np.float32, copy=True))
+    return torch.from_numpy(np.array(motion_field.transpose(2, 0, 1), dtype=np.float32, copy=True))
+
+
+def tensor_finite_summary(value):
+    if value is None:
+        return {"finite": True, "nan": 0, "inf": 0, "total": 0}
+    tensor = value.detach() if isinstance(value, torch.Tensor) else torch.as_tensor(value)
+    total = int(tensor.numel())
+    nan = int(torch.isnan(tensor).sum().item()) if tensor.is_floating_point() else 0
+    inf = int(torch.isinf(tensor).sum().item()) if tensor.is_floating_point() else 0
+    return {
+        "finite": nan == 0 and inf == 0,
+        "nan": nan,
+        "inf": inf,
+        "total": total,
+    }
+
+
+def finite_issue_label(**items):
+    issues = []
+    for name, summary in items.items():
+        if not summary["finite"]:
+            issues.append(f"{name}:nan={summary['nan']},inf={summary['inf']}")
+    return "; ".join(issues)
+
+
 @torch.no_grad()
 def main():
     args = parse_args()
-    stage1_cfg = load_config(args.stage1_config)
-    stage2_cfg = normalize_config(load_config(args.stage2_config))
     device = resolve_device(args.device)
+    stage1_cfg, stage1_config_source = load_eval_config(
+        args.stage1_config,
+        args.stage1_checkpoint,
+        device=device,
+        normalize=False,
+    )
+    stage2_cfg, stage2_config_source = load_eval_config(
+        args.stage2_config,
+        args.stage2_checkpoint,
+        device=device,
+        normalize=True,
+    )
+    stage2_cfg = apply_dataset_overrides(stage2_cfg, args, include_motion=True)
     run_dir = create_run_dir(args.output_root, "stage1_stage2_validation")
     visual_dir = run_dir / "visuals"
     gyro_visual_dir = visual_dir / "gyro"
     cmf_visual_dir = visual_dir / "cmf"
+    cmf_compare_visual_dir = visual_dir / "cmf_compare"
     stage2_visual_dir = visual_dir / "stage2"
     output_dir = run_dir / "outputs"
 
@@ -127,6 +183,12 @@ def main():
     overall = MetricAverager(metric_names)
     by_type = GroupedMetricAverager(metric_names)
     rows = []
+    finite_issue_counts = {
+        "pred_gyro": 0,
+        "target_gyro": 0,
+        "pred_cmf": 0,
+        "pred_image": 0,
+    }
     saved = 0
     max_batches = args.max_batches
     if max_batches is None:
@@ -154,6 +216,7 @@ def main():
         pred_gyro = result["pred_gyro"].detach().cpu()
         target_gyro = batch["gyro"] if load_target_gyro else None
         cmf = result["cmf"].detach().cpu()
+        pred_cpu = pred.detach().cpu()
 
         psnr_values = sample_psnr(pred, sharp).detach().cpu()
         ssim_values = sample_ssim(pred, sharp).detach().cpu()
@@ -171,9 +234,20 @@ def main():
         stems = batch_meta_list(batch, "stem", batch_size, "sample")
         types = batch_meta_list(batch, "type", batch_size, "unknown")
         indices = batch_meta_int_list(batch, "index", batch_size, 0)
+        motion_field_paths = batch_meta_list(batch, "motion_field_path", batch_size, "")
         image_cfg = stage1_cfg.get("image", {})
 
         for idx in range(batch_size):
+            finite_summaries = {
+                "pred_gyro": tensor_finite_summary(pred_gyro[idx]),
+                "target_gyro": tensor_finite_summary(target_gyro[idx] if load_target_gyro else None),
+                "pred_cmf": tensor_finite_summary(cmf[idx]),
+                "pred_image": tensor_finite_summary(pred_cpu[idx]),
+            }
+            for key, summary in finite_summaries.items():
+                if not summary["finite"]:
+                    finite_issue_counts[key] += 1
+            finite_issues = finite_issue_label(**finite_summaries)
             metrics = {
                 "loss": float(loss_values[idx]),
                 "psnr": float(psnr_values[idx]),
@@ -191,16 +265,23 @@ def main():
                 "index": indices[idx],
                 "type": types[idx],
                 "stem": stems[idx],
+                "finite_issues": finite_issues,
             }
+            for source_name, summary in finite_summaries.items():
+                row[f"{source_name}_nan"] = summary["nan"]
+                row[f"{source_name}_inf"] = summary["inf"]
             for metric_name in metric_names:
                 row[metric_name] = format_metric(metric_name, metrics[metric_name])
 
-            if saved < int(args.save_limit):
+            if args.save_limit is None or saved < int(args.save_limit):
+                gyro_title = f"B -> gyro | {types[idx]} / {stems[idx]}"
+                if finite_issues:
+                    gyro_title += f" | non-finite {finite_issues}"
                 gyro_visual = make_stage1_gyro_visualization(
                     batch["stage1_image"][idx],
                     pred_gyro[idx],
                     target_gyro=target_gyro[idx] if load_target_gyro else None,
-                    title=f"B -> gyro | {types[idx]} / {stems[idx]}",
+                    title=gyro_title,
                     mean=image_cfg.get("mean"),
                     std=image_cfg.get("std"),
                 )
@@ -209,6 +290,18 @@ def main():
                     cmf[idx],
                     title=f"gyro -> CMF (paper V) | {types[idx]} / {stems[idx]}",
                 )
+                cmf_compare_visual = None
+                cmf_compare_path = None
+                target_cmf = load_motion_field(motion_field_paths[idx]) if load_target_gyro else None
+                if target_cmf is not None:
+                    cmf_compare_visual, cmf_metrics = make_cmf_comparison(
+                        batch["lq"][idx],
+                        cmf[idx],
+                        target_cmf,
+                        title=f"Pred CMF vs GT CMF | {types[idx]} / {stems[idx]}",
+                    )
+                    for metric_name, metric_value in cmf_metrics.items():
+                        row[metric_name] = format_metric(metric_name, metric_value)
                 stage2_visual = make_stage2_comparison(
                     batch["lq"][idx],
                     pred[idx].detach().cpu(),
@@ -220,16 +313,21 @@ def main():
                 output_rgb = tensor_to_rgb_uint8(pred[idx].detach().cpu())
                 gyro_visual_path = gyro_visual_dir / f"{name}.png"
                 cmf_visual_path = cmf_visual_dir / f"{name}.png"
+                if cmf_compare_visual is not None:
+                    cmf_compare_path = cmf_compare_visual_dir / f"{name}.png"
                 stage2_visual_path = stage2_visual_dir / f"{name}.png"
                 output_path = output_dir / f"{name}_deblur.png"
                 write_image(gyro_visual_path, gyro_visual)
                 write_image(cmf_visual_path, cmf_visual)
+                if cmf_compare_visual is not None:
+                    write_image(cmf_compare_path, cmf_compare_visual)
                 write_image(stage2_visual_path, stage2_visual)
                 write_image(output_path, output_rgb[:, :, ::-1].copy())
                 row.update(
                     {
                         "gyro_visual_path": str(gyro_visual_path),
                         "cmf_visual_path": str(cmf_visual_path),
+                        "cmf_compare_visual_path": "" if cmf_compare_path is None else str(cmf_compare_path),
                         "stage2_visual_path": str(stage2_visual_path),
                         "output_path": str(output_path),
                     }
@@ -243,9 +341,22 @@ def main():
         "index",
         "type",
         "stem",
+        "finite_issues",
+        "pred_gyro_nan",
+        "pred_gyro_inf",
+        "target_gyro_nan",
+        "target_gyro_inf",
+        "pred_cmf_nan",
+        "pred_cmf_inf",
+        "pred_image_nan",
+        "pred_image_inf",
         *metric_names,
         "gyro_visual_path",
         "cmf_visual_path",
+        "cmf_mae",
+        "cmf_rmse",
+        "cmf_epe",
+        "cmf_compare_visual_path",
         "stage2_visual_path",
         "output_path",
     ]
@@ -255,16 +366,21 @@ def main():
         {
             "overall": overall.as_dict(),
             "by_type": by_type.as_dict(),
-            "stage1_config": str(Path(args.stage1_config)),
+            "stage1_config": str(Path(args.stage1_config)) if args.stage1_config else None,
+            "stage1_config_source": stage1_config_source,
             "stage1_checkpoint": args.stage1_checkpoint,
-            "stage2_config": str(Path(args.stage2_config)),
+            "stage2_config": str(Path(args.stage2_config)) if args.stage2_config else None,
+            "stage2_config_source": stage2_config_source,
             "stage2_checkpoint": args.stage2_checkpoint,
+            "dataset_root": stage2_cfg.get("dataset", {}).get("root"),
+            "metadata_name": stage2_cfg.get("dataset", {}).get("metadata_name"),
             "split": split,
             "max_batches": max_batches,
             "extra_metrics": extra_metric_names,
             "load_target_gyro": load_target_gyro,
             "load_report": load_report,
             "saved_visuals": saved,
+            "finite_issue_counts": finite_issue_counts,
         },
     )
     print(f"saved: {run_dir}")

@@ -7,9 +7,9 @@ from tqdm import tqdm
 
 from datasets import build_stage1_stage2_loader
 from utils import (
-    load_config,
+    apply_dataset_overrides,
+    load_eval_config,
     load_stage1_stage2_models,
-    normalize_config,
     resolve_device,
     run_stage1_stage2_batch,
 )
@@ -34,13 +34,16 @@ from utils.utils_visualization import (
 
 def parse_args():
     parser = argparse.ArgumentParser(description="End-to-end inference: B -> gyro, gyro -> CMF, B + CMF -> S.")
-    parser.add_argument("--stage1-config", default="config/stage1_gyro.yaml")
+    parser.add_argument("--stage1-config", default=None)
     parser.add_argument("--stage1-checkpoint", default=None)
-    parser.add_argument("--stage2-config", default="config/stage2_deblur.yaml")
+    parser.add_argument("--stage2-config", default=None)
     parser.add_argument("--stage2-checkpoint", default=None)
+    parser.add_argument("--dataset-root", default=None)
+    parser.add_argument("--metadata-name", default=None)
+    parser.add_argument("--motion-downsample", type=int, default=None)
     parser.add_argument("--split", default=None)
     parser.add_argument("--output-root", default="runs")
-    parser.add_argument("--limit", type=int, default=32)
+    parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default="auto")
@@ -53,9 +56,20 @@ def parse_args():
 @torch.no_grad()
 def main():
     args = parse_args()
-    stage1_cfg = load_config(args.stage1_config)
-    stage2_cfg = normalize_config(load_config(args.stage2_config))
     device = resolve_device(args.device)
+    stage1_cfg, stage1_config_source = load_eval_config(
+        args.stage1_config,
+        args.stage1_checkpoint,
+        device=device,
+        normalize=False,
+    )
+    stage2_cfg, stage2_config_source = load_eval_config(
+        args.stage2_config,
+        args.stage2_checkpoint,
+        device=device,
+        normalize=True,
+    )
+    stage2_cfg = apply_dataset_overrides(stage2_cfg, args, include_motion=True)
     run_dir = create_run_dir(args.output_root, "stage1_stage2_inference")
     visual_dir = run_dir / "visuals"
     gyro_visual_dir = visual_dir / "gyro"
@@ -190,10 +204,14 @@ def main():
         run_dir / "summary.json",
         {
             "overall": summary.as_dict(),
-            "stage1_config": str(Path(args.stage1_config)),
+            "stage1_config": str(Path(args.stage1_config)) if args.stage1_config else None,
+            "stage1_config_source": stage1_config_source,
             "stage1_checkpoint": args.stage1_checkpoint,
-            "stage2_config": str(Path(args.stage2_config)),
+            "stage2_config": str(Path(args.stage2_config)) if args.stage2_config else None,
+            "stage2_config_source": stage2_config_source,
             "stage2_checkpoint": args.stage2_checkpoint,
+            "dataset_root": stage2_cfg.get("dataset", {}).get("root"),
+            "metadata_name": stage2_cfg.get("dataset", {}).get("metadata_name"),
             "split": split,
             "saved": saved,
             "load_report": load_report,
