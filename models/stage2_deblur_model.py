@@ -18,8 +18,10 @@ class MotionGuidedDeblurNet(nn.Module):
         middle_blk_num=16,
         enc_blk_nums=(2, 2, 2),
         dec_blk_nums=(1, 1, 1),
+        use_motion=True,
     ):
         super().__init__()
+        self.use_motion = bool(use_motion)
 
         self.intro = nn.Conv2d(
             in_channels=img_channel,
@@ -30,14 +32,15 @@ class MotionGuidedDeblurNet(nn.Module):
             bias=True,
         )
 
-        self.intro_motion = nn.Conv2d(
-            in_channels=motion_channel,
-            out_channels=width * 2,
-            kernel_size=3,
-            padding=1,
-            stride=1,
-            bias=True,
-        )
+        if self.use_motion:
+            self.intro_motion = nn.Conv2d(
+                in_channels=motion_channel,
+                out_channels=width * 2,
+                kernel_size=3,
+                padding=1,
+                stride=1,
+                bias=True,
+            )
 
         self.ending = nn.Conv2d(
             in_channels=width,
@@ -50,10 +53,12 @@ class MotionGuidedDeblurNet(nn.Module):
 
         self.encoders = nn.ModuleList()
         self.downs = nn.ModuleList()
-        self.motion_refine_blks = nn.ModuleList()
+        if self.use_motion:
+            self.motion_refine_blks = nn.ModuleList()
 
         self.middle_blks = nn.ModuleList()
-        self.motion_deblur_blks = nn.ModuleList()
+        if self.use_motion:
+            self.motion_deblur_blks = nn.ModuleList()
 
         self.ups = nn.ModuleList()
         self.decoders = nn.ModuleList()
@@ -70,15 +75,16 @@ class MotionGuidedDeblurNet(nn.Module):
                 )
             )
 
-            if idx == 0:
-                self.motion_refine_blks.append(nn.Identity())
-            else:
-                self.motion_refine_blks.append(
-                    MotionRefinementBlock(
-                        motion_channels=chan,
-                        blur_channels=chan,
+            if self.use_motion:
+                if idx == 0:
+                    self.motion_refine_blks.append(nn.Identity())
+                else:
+                    self.motion_refine_blks.append(
+                        MotionRefinementBlock(
+                            motion_channels=chan,
+                            blur_channels=chan,
+                        )
                     )
-                )
 
             self.downs.append(
                 nn.Conv2d(
@@ -104,9 +110,10 @@ class MotionGuidedDeblurNet(nn.Module):
                 )
             )
 
-            self.motion_deblur_blks.append(
-                MotionGuidedDeblurringBlock(chan)
-            )
+            if self.use_motion:
+                self.motion_deblur_blks.append(
+                    MotionGuidedDeblurringBlock(chan)
+                )
 
         remain_blocks = middle_blk_num % num_motion_blocks
         if remain_blocks > 0:
@@ -116,9 +123,10 @@ class MotionGuidedDeblurNet(nn.Module):
                 )
             )
 
-            self.motion_deblur_blks.append(
-                MotionGuidedDeblurringBlock(chan)
-            )
+            if self.use_motion:
+                self.motion_deblur_blks.append(
+                    MotionGuidedDeblurringBlock(chan)
+                )
 
         # -------------------------
         # Decoder
@@ -146,45 +154,43 @@ class MotionGuidedDeblurNet(nn.Module):
 
         self.padder_size = 2 ** len(self.encoders)
 
-    def forward(self, blur, motion):
+    def forward(self, blur, motion=None):
         _, _, h, w = blur.shape
 
         blur = self.check_image_size(blur)
-        motion = self.check_motion_size(
-            motion,
-            target_h=blur.shape[-2] // 2,
-            target_w=blur.shape[-1] // 2,
-        )
-
         x = self.intro(blur)
-        motion_feat = self.intro_motion(motion)
+
+        motion_feat = None
+        if self.use_motion:
+            if motion is None:
+                raise ValueError("motion is required when use_motion=True")
+            motion = self.check_motion_size(
+                motion,
+                target_h=blur.shape[-2] // 2,
+                target_w=blur.shape[-1] // 2,
+            )
+            motion_feat = self.intro_motion(motion)
 
         encs = []
 
         # -------------------------
         # Encoder
         # -------------------------
-        for idx, (encoder, down, motion_refine_blk) in enumerate(zip(
-            self.encoders,
-            self.downs,
-            self.motion_refine_blks,
-        )):
+        for idx, (encoder, down) in enumerate(zip(self.encoders, self.downs)):
             x = encoder(x)
             encs.append(x)
 
-            if idx != 0:
-                motion_feat = motion_refine_blk(x, motion_feat)
+            if self.use_motion and idx != 0:
+                motion_feat = self.motion_refine_blks[idx](x, motion_feat)
             x = down(x)
 
         # -------------------------
         # Bottleneck
         # -------------------------
-        for middle_blk, motion_deblur_blk in zip(
-            self.middle_blks,
-            self.motion_deblur_blks,
-        ):
+        for idx, middle_blk in enumerate(self.middle_blks):
             x = middle_blk(x)
-            x, motion_feat = motion_deblur_blk(x, motion_feat)
+            if self.use_motion:
+                x, motion_feat = self.motion_deblur_blks[idx](x, motion_feat)
 
         # -------------------------
         # Decoder
@@ -250,6 +256,7 @@ def _model_args(model_cfg):
         "middle_blk_num",
         "enc_blk_nums",
         "dec_blk_nums",
+        "use_motion",
     }
 
     kwargs = dict(model_cfg.get("args") or {})
@@ -292,6 +299,7 @@ if __name__ == "__main__":
         middle_blk_num=middle_blk_num,
         enc_blk_nums=enc_blks,
         dec_blk_nums=dec_blks,
+        use_motion=True,
     ).cuda()
 
     blur = torch.randn(1, 3, 256, 256).cuda()
@@ -301,5 +309,4 @@ if __name__ == "__main__":
 
     print("params:", sum(p.numel() for p in net.parameters()))
     print("out:", out.shape)
-
 
