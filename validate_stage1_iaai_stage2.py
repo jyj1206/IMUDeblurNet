@@ -1,19 +1,11 @@
 import argparse
 from pathlib import Path
 
-import numpy as np
 import torch
 from tqdm import tqdm
 
 from datasets import build_stage1_stage2_loader
-from utils import (
-    apply_dataset_overrides,
-    camera_matrix_from_config,
-    load_eval_config,
-    load_stage1_stage2_models,
-    resolve_device,
-    run_stage1_stage2_batch,
-)
+from utils import apply_dataset_overrides, camera_matrix_from_config, load_eval_config
 from utils.utils_eval import (
     GroupedMetricAverager,
     MetricAverager,
@@ -23,6 +15,11 @@ from utils.utils_eval import (
     safe_name,
     save_csv,
     save_json,
+)
+from utils.utils_iaai_stage_pipeline import (
+    load_stage1_iaai_stage2_models,
+    resolve_device,
+    run_stage1_iaai_stage2_batch,
 )
 from utils.utils_iqa import Stage2IqaMetrics, normalize_iqa_metric_names
 from utils.utils_metrics import sample_psnr, sample_ssim
@@ -34,10 +31,17 @@ from utils.utils_visualization import (
     tensor_to_rgb_uint8,
     write_image,
 )
+from validate_stage1_stage2 import (
+    finite_issue_label,
+    format_metric,
+    load_motion_field,
+    sample_stage2_loss,
+    tensor_finite_summary,
+)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="End-to-end validation: B -> gyro, gyro -> CMF, B + CMF -> S.")
+    parser = argparse.ArgumentParser(description="End-to-end validation with Stage1 IAAI auxiliary gyro model.")
     parser.add_argument("--stage1-config", default=None)
     parser.add_argument("--stage1-checkpoint", default=None)
     parser.add_argument("--stage2-config", default=None)
@@ -57,77 +61,12 @@ def parse_args():
     parser.add_argument("--camera-fy", type=float, default=None)
     parser.add_argument("--camera-cx", type=float, default=None)
     parser.add_argument("--camera-cy", type=float, default=None)
-    parser.add_argument(
-        "--load-target-gyro",
-        action="store_true",
-        help="Also load sensor_windows.npy and report Stage1 gyro MAE/RMSE when the dataset has gyro GT.",
-    )
+    parser.add_argument("--load-target-gyro", action="store_true")
     parser.add_argument("--non-strict-stage1", action="store_true")
     parser.add_argument("--non-strict-stage2", action="store_true")
-    parser.add_argument(
-        "--extra-metrics",
-        nargs="*",
-        default=[],
-        help="Optional final-image metrics: lpips niqe topiq/topiq_fr topiq_nr.",
-    )
-    parser.add_argument(
-        "--realblur-metrics",
-        action="store_true",
-        help="Shortcut for RealBlur-style final-image evaluation: LPIPS, NIQE, and TOPIQ-FR.",
-    )
+    parser.add_argument("--extra-metrics", nargs="*", default=[])
+    parser.add_argument("--realblur-metrics", action="store_true")
     return parser.parse_args()
-
-
-def sample_stage2_loss(pred_raw, sharp, loss_name):
-    if str(loss_name).lower() == "psnr":
-        mse = ((pred_raw - sharp) ** 2).flatten(1).mean(dim=1)
-        return (10.0 * torch.log10(mse + 1e-8)).detach().cpu()
-    return (pred_raw - sharp).abs().flatten(1).mean(dim=1).detach().cpu()
-
-
-def format_metric(name, value):
-    if name == "psnr":
-        return f"{float(value):.6f}"
-    return f"{float(value):.8f}"
-
-
-def load_motion_field(path):
-    path = Path(path)
-    if not path.exists():
-        return None
-    if path.suffix == ".npz":
-        with np.load(path) as data:
-            motion_field = data["motion_field"].astype(np.float32)
-    else:
-        motion_field = np.load(path).astype(np.float32)
-    if motion_field.ndim != 3:
-        raise ValueError(f"motion field must be HWC or CHW, got {motion_field.shape}: {path}")
-    if motion_field.shape[0] <= 64 and motion_field.shape[0] < motion_field.shape[-1]:
-        return torch.from_numpy(np.array(motion_field, dtype=np.float32, copy=True))
-    return torch.from_numpy(np.array(motion_field.transpose(2, 0, 1), dtype=np.float32, copy=True))
-
-
-def tensor_finite_summary(value):
-    if value is None:
-        return {"finite": True, "nan": 0, "inf": 0, "total": 0}
-    tensor = value.detach() if isinstance(value, torch.Tensor) else torch.as_tensor(value)
-    total = int(tensor.numel())
-    nan = int(torch.isnan(tensor).sum().item()) if tensor.is_floating_point() else 0
-    inf = int(torch.isinf(tensor).sum().item()) if tensor.is_floating_point() else 0
-    return {
-        "finite": nan == 0 and inf == 0,
-        "nan": nan,
-        "inf": inf,
-        "total": total,
-    }
-
-
-def finite_issue_label(**items):
-    issues = []
-    for name, summary in items.items():
-        if not summary["finite"]:
-            issues.append(f"{name}:nan={summary['nan']},inf={summary['inf']}")
-    return "; ".join(issues)
 
 
 @torch.no_grad()
@@ -160,7 +99,7 @@ def main():
         cx=args.camera_cx,
         cy=args.camera_cy,
     )
-    run_dir = create_run_dir(args.output_root, "stage1_stage2_validation")
+    run_dir = create_run_dir(args.output_root, "stage1_iaai_stage2_validation")
     visual_dir = run_dir / "visuals"
     gyro_visual_dir = visual_dir / "gyro"
     cmf_visual_dir = visual_dir / "cmf"
@@ -169,7 +108,6 @@ def main():
     output_dir = run_dir / "outputs"
 
     split = args.split or stage2_cfg.get("validation", {}).get("split") or "val"
-    load_target_gyro = args.load_target_gyro
     _, loader = build_stage1_stage2_loader(
         stage1_cfg,
         stage2_cfg,
@@ -177,10 +115,10 @@ def main():
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         device=device,
-        load_target_gyro=load_target_gyro,
+        load_target_gyro=args.load_target_gyro,
         default_dt=args.default_dt,
     )
-    stage1_model, stage2_model, load_report = load_stage1_stage2_models(
+    stage1_model, stage2_model, load_report = load_stage1_iaai_stage2_models(
         stage1_cfg,
         stage2_cfg,
         args.stage1_checkpoint,
@@ -195,7 +133,7 @@ def main():
     )
     iqa_metrics = Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
     metric_names = ["loss", "psnr", "ssim"]
-    if load_target_gyro:
+    if args.load_target_gyro:
         metric_names.extend(["gyro_mae", "gyro_rmse"])
     metric_names.extend(extra_metric_names)
     overall = MetricAverager(metric_names)
@@ -215,13 +153,13 @@ def main():
     if max_batches is not None:
         total = min(total, int(max_batches))
 
-    progress = tqdm(loader, total=total, desc="stage1->stage2 validation")
+    progress = tqdm(loader, total=total, desc="stage1 IAAI -> stage2 validation")
     for batch_idx, batch in enumerate(progress):
         if max_batches is not None and batch_idx >= int(max_batches):
             break
 
         sharp = batch["gt"].to(device, non_blocking=True).float()
-        result = run_stage1_stage2_batch(
+        result = run_stage1_iaai_stage2_batch(
             stage1_model,
             stage2_model,
             batch,
@@ -229,11 +167,12 @@ def main():
             device,
             default_dt=args.default_dt,
             camera_matrix=camera_matrix,
+            return_aux=False,
         )
         pred = result["pred"]
         pred_raw = result["pred_raw"]
         pred_gyro = result["pred_gyro"].detach().cpu()
-        target_gyro = batch["gyro"] if load_target_gyro else None
+        target_gyro = batch["gyro"] if args.load_target_gyro else None
         cmf = result["cmf"].detach().cpu()
         pred_cpu = pred.detach().cpu()
 
@@ -245,7 +184,7 @@ def main():
             sharp,
             stage2_cfg.get("train", {}).get("loss", "psnr"),
         )
-        if load_target_gyro:
+        if args.load_target_gyro:
             gyro_mae_values = (pred_gyro - target_gyro).abs().flatten(1).mean(dim=1)
             gyro_rmse_values = torch.sqrt(((pred_gyro - target_gyro) ** 2).flatten(1).mean(dim=1))
 
@@ -259,7 +198,7 @@ def main():
         for idx in range(batch_size):
             finite_summaries = {
                 "pred_gyro": tensor_finite_summary(pred_gyro[idx]),
-                "target_gyro": tensor_finite_summary(target_gyro[idx] if load_target_gyro else None),
+                "target_gyro": tensor_finite_summary(target_gyro[idx] if args.load_target_gyro else None),
                 "pred_cmf": tensor_finite_summary(cmf[idx]),
                 "pred_image": tensor_finite_summary(pred_cpu[idx]),
             }
@@ -272,13 +211,14 @@ def main():
                 "psnr": float(psnr_values[idx]),
                 "ssim": float(ssim_values[idx]),
             }
-            if load_target_gyro:
+            if args.load_target_gyro:
                 metrics["gyro_mae"] = float(gyro_mae_values[idx])
                 metrics["gyro_rmse"] = float(gyro_rmse_values[idx])
             for metric_name in extra_metric_names:
                 metrics[metric_name] = float(extra_values[metric_name][idx])
             overall.update(metrics)
             by_type.update(types[idx], metrics)
+
             name = safe_name(f"{indices[idx]:06d}", types[idx], stems[idx])
             row = {
                 "index": indices[idx],
@@ -293,31 +233,28 @@ def main():
                 row[metric_name] = format_metric(metric_name, metrics[metric_name])
 
             if args.save_limit is None or saved < int(args.save_limit):
-                gyro_title = f"B -> gyro | {types[idx]} / {stems[idx]}"
-                if finite_issues:
-                    gyro_title += f" | non-finite {finite_issues}"
                 gyro_visual = make_stage1_gyro_visualization(
                     batch["stage1_image"][idx],
                     pred_gyro[idx],
-                    target_gyro=target_gyro[idx] if load_target_gyro else None,
-                    title=gyro_title,
+                    target_gyro=target_gyro[idx] if args.load_target_gyro else None,
+                    title=f"IAAI B -> gyro | {types[idx]} / {stems[idx]}",
                     mean=image_cfg.get("mean"),
                     std=image_cfg.get("std"),
                 )
                 cmf_visual = make_cmf_visualization(
                     batch["lq"][idx],
                     cmf[idx],
-                    title=f"gyro -> CMF (paper V) | {types[idx]} / {stems[idx]}",
+                    title=f"IAAI gyro -> CMF | {types[idx]} / {stems[idx]}",
                 )
                 cmf_compare_visual = None
                 cmf_compare_path = None
-                target_cmf = load_motion_field(motion_field_paths[idx]) if load_target_gyro else None
+                target_cmf = load_motion_field(motion_field_paths[idx]) if args.load_target_gyro else None
                 if target_cmf is not None:
                     cmf_compare_visual, cmf_metrics = make_cmf_comparison(
                         batch["lq"][idx],
                         cmf[idx],
                         target_cmf,
-                        title=f"Pred CMF vs GT CMF | {types[idx]} / {stems[idx]}",
+                        title=f"IAAI Pred CMF vs GT CMF | {types[idx]} / {stems[idx]}",
                     )
                     for metric_name, metric_value in cmf_metrics.items():
                         row[metric_name] = format_metric(metric_name, metric_value)
@@ -327,7 +264,7 @@ def main():
                     batch["gt"][idx],
                     psnr=metrics["psnr"],
                     ssim=metrics["ssim"],
-                    title=f"B + CMF -> S | {types[idx]} / {stems[idx]}",
+                    title=f"IAAI gyro + B -> S | {types[idx]} / {stems[idx]}",
                 )
                 output_rgb = tensor_to_rgb_uint8(pred[idx].detach().cpu())
                 gyro_visual_path = gyro_visual_dir / f"{name}.png"
@@ -396,7 +333,7 @@ def main():
             "split": split,
             "max_batches": max_batches,
             "extra_metrics": extra_metric_names,
-            "load_target_gyro": load_target_gyro,
+            "load_target_gyro": args.load_target_gyro,
             "load_report": load_report,
             "camera_matrix": camera_matrix.tolist(),
             "saved_visuals": saved,

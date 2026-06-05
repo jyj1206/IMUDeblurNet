@@ -1,7 +1,11 @@
 import numpy as np
 import torch
 
-from generate_camera_motion_field import build_center_vectors, make_camera_motion_field
+from generate_camera_motion_field import (
+    build_center_vectors,
+    camera_matrix_from_values,
+    make_camera_motion_field,
+)
 from models.stage1_gyro_estimation_model import build_stage1_model
 from models.stage2_deblur_model import build_model as build_stage2_model
 from utils.utils_eval import load_model_weights
@@ -11,6 +15,18 @@ def resolve_device(name="auto"):
     if name == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(name)
+
+
+def camera_matrix_from_config(config=None, fx=None, fy=None, cx=None, cy=None):
+    camera_cfg = {}
+    if isinstance(config, dict):
+        camera_cfg = config.get("camera", {}) or {}
+    return camera_matrix_from_values(
+        fx=fx if fx is not None else camera_cfg.get("fx"),
+        fy=fy if fy is not None else camera_cfg.get("fy"),
+        cx=cx if cx is not None else camera_cfg.get("cx"),
+        cy=cy if cy is not None else camera_cfg.get("cy"),
+    )
 
 
 def load_stage1_stage2_models(
@@ -45,6 +61,7 @@ def predicted_gyro_to_cmf(
     timestamp_windows,
     downsample=2,
     default_dt=1.0 / 240.0,
+    camera_matrix=None,
     device=None,
 ):
     if pred_gyro.ndim != 3:
@@ -62,6 +79,7 @@ def predicted_gyro_to_cmf(
             timestamp_window=timestamp_window,
             center_vectors=center_vectors,
             default_dt=default_dt,
+            camera_matrix=camera_matrix,
         )
         motion_field = motion_field.astype(np.float32).transpose(2, 0, 1)
         motion_fields.append(torch.from_numpy(np.ascontiguousarray(motion_field)))
@@ -78,6 +96,7 @@ def run_stage1_stage2_batch(
     stage2_config,
     device,
     default_dt=1.0 / 240.0,
+    camera_matrix=None,
 ):
     stage1_image = batch["stage1_image"].to(device, non_blocking=True).float()
     blur = batch["lq"].to(device, non_blocking=True).float()
@@ -90,6 +109,7 @@ def run_stage1_stage2_batch(
         timestamp_windows=timestamp_windows,
         downsample=stage2_config.get("dataset", {}).get("motion_downsample", 2),
         default_dt=default_dt,
+        camera_matrix=camera_matrix,
         device=device,
     )
     pred_raw = stage2_model(blur, cmf)

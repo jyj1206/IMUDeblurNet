@@ -6,14 +6,7 @@ import torch
 from tqdm import tqdm
 
 from datasets import build_stage1_stage2_loader
-from utils import (
-    apply_dataset_overrides,
-    camera_matrix_from_config,
-    load_eval_config,
-    load_stage1_stage2_models,
-    resolve_device,
-    run_stage1_stage2_batch,
-)
+from utils import apply_dataset_overrides, camera_matrix_from_config, load_eval_config
 from utils.utils_eval import (
     MetricAverager,
     batch_meta_int_list,
@@ -22,6 +15,11 @@ from utils.utils_eval import (
     safe_name,
     save_csv,
     save_json,
+)
+from utils.utils_iaai_stage_pipeline import (
+    load_stage1_iaai_stage2_models,
+    resolve_device,
+    run_stage1_iaai_stage2_batch,
 )
 from utils.utils_metrics import sample_psnr, sample_ssim
 from utils.utils_visualization import (
@@ -34,7 +32,7 @@ from utils.utils_visualization import (
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="End-to-end inference: B -> gyro, gyro -> CMF, B + CMF -> S.")
+    parser = argparse.ArgumentParser(description="End-to-end inference with Stage1 IAAI auxiliary gyro model.")
     parser.add_argument("--stage1-config", default=None)
     parser.add_argument("--stage1-checkpoint", default=None)
     parser.add_argument("--stage2-config", default=None)
@@ -88,7 +86,7 @@ def main():
         cx=args.camera_cx,
         cy=args.camera_cy,
     )
-    run_dir = create_run_dir(args.output_root, "stage1_stage2_inference")
+    run_dir = create_run_dir(args.output_root, "stage1_iaai_stage2_inference")
     visual_dir = run_dir / "visuals"
     gyro_visual_dir = visual_dir / "gyro"
     cmf_visual_dir = visual_dir / "cmf"
@@ -106,7 +104,7 @@ def main():
         load_target_gyro=False,
         default_dt=args.default_dt,
     )
-    stage1_model, stage2_model, load_report = load_stage1_stage2_models(
+    stage1_model, stage2_model, load_report = load_stage1_iaai_stage2_models(
         stage1_cfg,
         stage2_cfg,
         args.stage1_checkpoint,
@@ -124,9 +122,9 @@ def main():
         total_batches = min(total_batches, math.ceil(int(args.limit) / max(1, int(args.batch_size))))
 
     image_cfg = stage1_cfg.get("image", {})
-    for batch in tqdm(loader, total=total_batches, desc="stage1->stage2 inference"):
+    for batch in tqdm(loader, total=total_batches, desc="stage1 IAAI -> stage2 inference"):
         sharp = batch["gt"].to(device, non_blocking=True).float()
-        result = run_stage1_stage2_batch(
+        result = run_stage1_iaai_stage2_batch(
             stage1_model,
             stage2_model,
             batch,
@@ -134,6 +132,7 @@ def main():
             device,
             default_dt=args.default_dt,
             camera_matrix=camera_matrix,
+            return_aux=False,
         )
         pred = result["pred"]
         pred_gyro = result["pred_gyro"].detach().cpu()
@@ -159,14 +158,14 @@ def main():
             gyro_visual = make_stage1_gyro_visualization(
                 batch["stage1_image"][idx],
                 pred_gyro[idx],
-                title=f"B -> gyro | {types[idx]} / {stems[idx]}",
+                title=f"IAAI B -> gyro | {types[idx]} / {stems[idx]}",
                 mean=image_cfg.get("mean"),
                 std=image_cfg.get("std"),
             )
             cmf_visual = make_cmf_visualization(
                 batch["lq"][idx],
                 cmf[idx],
-                title=f"gyro -> CMF (paper V) | {types[idx]} / {stems[idx]}",
+                title=f"IAAI gyro -> CMF | {types[idx]} / {stems[idx]}",
             )
             stage2_visual = make_stage2_comparison(
                 batch["lq"][idx],
@@ -174,7 +173,7 @@ def main():
                 batch["gt"][idx],
                 psnr=metrics["psnr"],
                 ssim=metrics["ssim"],
-                title=f"B + CMF -> S | {types[idx]} / {stems[idx]}",
+                title=f"IAAI gyro + B -> S | {types[idx]} / {stems[idx]}",
             )
             output_rgb = tensor_to_rgb_uint8(pred[idx].detach().cpu())
             gyro_visual_path = gyro_visual_dir / f"{name}.png"

@@ -1,9 +1,2 @@
 {
-    "python-envs.pythonProjects": [
-        {
-            "path": "data/RealBlur_J",
-            "envManager": "ms-python.python:venv",
-            "packageManager": "ms-python.python:pip"
-        }
-    ]
 }

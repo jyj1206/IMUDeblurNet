@@ -23,9 +23,11 @@ def tensor_to_rgb_uint8(image, mean=None, std=None):
             mean_t = torch.tensor(mean, dtype=image.dtype).view(-1, 1, 1)
             std_t = torch.tensor(std, dtype=image.dtype).view(-1, 1, 1)
             image = image * std_t + mean_t
+        image = torch.nan_to_num(image, nan=0.0, posinf=1.0, neginf=0.0)
         image = image.clamp(0.0, 1.0).permute(1, 2, 0).numpy()
     image = np.asarray(image)
     if image.dtype != np.uint8:
+        image = np.nan_to_num(image, nan=0.0, posinf=1.0, neginf=0.0)
         image = np.clip(image * 255.0, 0, 255).round().astype(np.uint8)
     return image
 
@@ -250,10 +252,18 @@ def make_cmf_comparison(
     target = _to_numpy_cmf(target_motion_field)
     pred, target = _align_cmf_pair(pred, target)
     diff = pred - target
-    mae = float(np.mean(np.abs(diff)))
-    rmse = float(np.sqrt(np.mean(diff * diff)))
+    abs_diff = np.abs(diff)
+    finite_diff = diff[np.isfinite(diff)]
+    finite_abs_diff = abs_diff[np.isfinite(abs_diff)]
+    if finite_diff.size:
+        mae = float(np.mean(finite_abs_diff))
+        rmse = float(np.sqrt(np.mean(finite_diff * finite_diff)))
+    else:
+        mae = float("nan")
+        rmse = float("nan")
     epe = _cmf_epe(diff)
-    mean_epe = float(np.mean(epe))
+    finite_epe = epe[np.isfinite(epe)]
+    mean_epe = float(np.mean(finite_epe)) if finite_epe.size else float("nan")
 
     pred_panel = _draw_cmf_overlay(
         image,
@@ -341,9 +351,15 @@ def _draw_cmf_overlay(
             for idx in range(vector_count):
                 dx = float(cmf[y, x, idx * 2]) * scale_x * trajectory_scale
                 dy = float(cmf[y, x, idx * 2 + 1]) * scale_y * trajectory_scale
+                if not np.isfinite(dx) or not np.isfinite(dy):
+                    break
                 cur_x += dx
                 cur_y += dy
+                if not np.isfinite(cur_x) or not np.isfinite(cur_y):
+                    break
                 points.append((int(round(cur_x)), int(round(cur_y))))
+            if len(points) < 2:
+                continue
             for p0, p1 in zip(points[:-1], points[1:]):
                 cv2.line(canvas, p0, p1, line_color, 1, cv2.LINE_AA)
             cv2.circle(canvas, points[0], 2, (40, 120, 255), -1, lineType=cv2.LINE_AA)
@@ -363,12 +379,18 @@ def _align_cmf_pair(pred, target):
 
 def _cmf_epe(diff):
     vectors = diff.reshape(diff.shape[0], diff.shape[1], -1, 2)
-    return np.sqrt(np.sum(vectors * vectors, axis=-1)).mean(axis=-1)
+    epe = np.sqrt(np.sum(vectors * vectors, axis=-1))
+    finite = np.isfinite(epe)
+    counts = np.maximum(finite.sum(axis=-1), 1)
+    return np.where(finite, epe, 0.0).sum(axis=-1) / counts
 
 
 def _draw_cmf_error_heatmap(image_rgb, epe):
-    heat = cv2.resize(epe, (image_rgb.shape[1], image_rgb.shape[0]), interpolation=cv2.INTER_LINEAR)
-    scale = np.percentile(heat, 99.0)
+    epe = np.asarray(epe, dtype=np.float32)
+    finite_epe = epe[np.isfinite(epe)]
+    heat_source = np.where(np.isfinite(epe), epe, 0.0)
+    heat = cv2.resize(heat_source, (image_rgb.shape[1], image_rgb.shape[0]), interpolation=cv2.INTER_LINEAR)
+    scale = np.percentile(finite_epe, 99.0) if finite_epe.size else 0.0
     scale = max(float(scale), 1e-8)
     heat_norm = np.clip(heat / scale, 0.0, 1.0)
     heat_uint8 = np.round(heat_norm * 255.0).astype(np.uint8)

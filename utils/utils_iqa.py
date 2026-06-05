@@ -86,6 +86,15 @@ def _as_batch_values(value, batch_size):
     if not isinstance(value, torch.Tensor):
         value = torch.as_tensor(value)
     value = value.detach().float().cpu()
-    if value.numel() == 1:
-        return value.repeat(int(batch_size))
-    return value.reshape(-1)
+    batch_size = int(batch_size)
+    flat = value.reshape(-1)
+    if flat.numel() == 1:
+        return flat.repeat(batch_size)
+    if flat.numel() == batch_size:
+        return flat
+    if flat.numel() % batch_size == 0:
+        return flat.reshape(batch_size, -1).mean(dim=1)
+    raise ValueError(
+        f"Metric output cannot be mapped to batch values: "
+        f"shape={tuple(value.shape)}, batch_size={batch_size}"
+    )

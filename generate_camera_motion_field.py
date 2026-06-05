@@ -12,6 +12,12 @@ WORKER_ARGS = None
 WORKER_CENTER_VECTOR_CACHE = None
 WORKER_SCENE_CACHE = None
 
+DEFAULT_CAMERA_K = np.array([
+    [923.7181693, 0.0, 969.4457779],
+    [0.0, 924.51235192, 532.9090534],
+    [0.0, 0.0, 1.0],
+], dtype=np.float64)
+
 
 def compute_rotation_matrix(ang_vel_x, ang_vel_y, ang_vel_z):
     r_x = np.array([
@@ -32,12 +38,30 @@ def compute_rotation_matrix(ang_vel_x, ang_vel_y, ang_vel_z):
     return r_x @ r_y @ r_z
 
 
-def compute_homography(r):
-    k = np.array([
-        [923.7181693, 0.0, 969.4457779],
-        [0.0, 924.51235192, 532.9090534],
-        [0.0, 0.0, 1.0],
-    ])
+def camera_matrix_from_values(fx=None, fy=None, cx=None, cy=None):
+    k = DEFAULT_CAMERA_K.copy()
+    if fx is not None:
+        k[0, 0] = float(fx)
+    if fy is not None:
+        k[1, 1] = float(fy)
+    if cx is not None:
+        k[0, 2] = float(cx)
+    if cy is not None:
+        k[1, 2] = float(cy)
+    return k
+
+
+def camera_matrix_from_args(args):
+    return camera_matrix_from_values(
+        fx=getattr(args, "camera_fx", None),
+        fy=getattr(args, "camera_fy", None),
+        cx=getattr(args, "camera_cx", None),
+        cy=getattr(args, "camera_cy", None),
+    )
+
+
+def compute_homography(r, camera_matrix=None):
+    k = DEFAULT_CAMERA_K if camera_matrix is None else np.asarray(camera_matrix, dtype=np.float64)
     return k @ r @ np.linalg.inv(k)
 
 
@@ -73,20 +97,26 @@ def compute_interval_rotations(gyro_window, timestamp_window, default_dt):
     return r_list
 
 
-def make_camera_motion_field(gyro_window, timestamp_window, center_vectors, default_dt):
+def make_camera_motion_field(
+    gyro_window,
+    timestamp_window,
+    center_vectors,
+    default_dt,
+    camera_matrix=None,
+):
     r_list = compute_interval_rotations(gyro_window, timestamp_window, default_dt)
 
     r = np.eye(3)
     h_pro_list = []
     for idx in range(len(r_list) // 2, len(r_list)):
         r = r_list[idx] @ r
-        h_pro_list.append(compute_homography(r))
+        h_pro_list.append(compute_homography(r, camera_matrix=camera_matrix))
 
     r = np.eye(3)
     h_pre_list = []
     for idx in range((len(r_list) // 2) - 1, -1, -1):
         r = r @ r_list[idx]
-        h_pre_list.append(np.linalg.inv(compute_homography(r)))
+        h_pre_list.append(np.linalg.inv(compute_homography(r, camera_matrix=camera_matrix)))
 
     cmf_pro = None
     for h_pro in h_pro_list:
@@ -185,6 +215,7 @@ def generate_camera_motion_field(row, mode, data_root, save_root_dir, center_vec
         timestamp_window=timestamp_window,
         center_vectors=center_vector_cache[cache_key],
         default_dt=args.default_dt,
+        camera_matrix=camera_matrix_from_args(args),
     )
 
     save_motion_field(save_file, cmf, args.dtype, args.save_format)
@@ -267,6 +298,10 @@ def parse_args():
     parser.add_argument("--default_dt", type=float, default=1.0 / 240.0)
     parser.add_argument("--dtype", choices=["float16", "float32"], default="float16")
     parser.add_argument("--save_format", choices=["npy", "npz"], default="npy")
+    parser.add_argument("--camera-fx", "--camera_fx", dest="camera_fx", type=float)
+    parser.add_argument("--camera-fy", "--camera_fy", dest="camera_fy", type=float)
+    parser.add_argument("--camera-cx", "--camera_cx", dest="camera_cx", type=float)
+    parser.add_argument("--camera-cy", "--camera_cy", dest="camera_cy", type=float)
     parser.add_argument("--max_samples", type=int)
     parser.add_argument("--num_workers", type=int, default=1)
     parser.add_argument("--chunksize", type=int, default=8)
