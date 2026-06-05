@@ -24,8 +24,8 @@ validation:
   enabled: true
   split: val
   batch_size: 4
-  num_workers: 4
-  interval: 1000
+  num_workers: 16
+  interval: 10000
   max_batches: null
 
 train:
