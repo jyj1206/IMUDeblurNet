@@ -37,6 +37,7 @@ from utils import (
     stage2_forward,
     unwrap_model,
 )
+from utils.utils_torch_load import torch_load_checkpoint
 
 
 def parse_args():
@@ -154,7 +155,7 @@ def main():
     best_val_psnr = -math.inf
     history = []
     if resume_checkpoint:
-        ckpt = torch.load(resume_checkpoint, map_location=device)
+        ckpt = torch_load_checkpoint(resume_checkpoint, map_location=device)
         load_checkpoint_state(ckpt, model, optimizer, scheduler, unwrap_model, len(loader))
         start_iteration = checkpoint_iteration(ckpt, len(loader))
         best_val_psnr = float(ckpt.get("best_val_psnr", best_val_psnr))

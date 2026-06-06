@@ -25,6 +25,7 @@ from utils.utils_loss import (
     build_stage1_stage2_finetune_loss,
     cmf_epe,
 )
+from utils.utils_torch_load import torch_load_checkpoint
 from utils.utils_visualization import (
     make_cmf_comparison,
     make_cmf_visualization,
@@ -60,7 +61,7 @@ def parse_args():
 
 
 def _load_checkpoint(path, device):
-    checkpoint = torch.load(path, map_location=device)
+    checkpoint = torch_load_checkpoint(path, map_location=device)
     if not isinstance(checkpoint, dict) or "model" not in checkpoint:
         raise KeyError(f"Fine-tune checkpoint must contain a combined model state: {path}")
     return checkpoint

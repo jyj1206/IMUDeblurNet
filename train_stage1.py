@@ -20,6 +20,7 @@ from utils import (
     set_seed,
     unwrap_model,
 )
+from utils.utils_torch_load import torch_load_checkpoint
 
 
 def parse_args():
@@ -173,7 +174,7 @@ def save_best_metrics(run_dir, epoch, metrics):
 
 
 def load_checkpoint(path, model, optimizer, scheduler, device):
-    checkpoint = torch.load(path, map_location=device)
+    checkpoint = torch_load_checkpoint(path, map_location=device)
     unwrap_model(model).load_state_dict(checkpoint["model"])
     if checkpoint.get("optimizer"):
         optimizer.load_state_dict(checkpoint["optimizer"])

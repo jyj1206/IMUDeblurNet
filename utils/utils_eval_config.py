@@ -1,16 +1,15 @@
 from copy import deepcopy
 from pathlib import Path
 
-import torch
-
 from .utils_config import normalize_config
+from .utils_torch_load import torch_load_checkpoint
 from .utils_yaml import load_config
 
 
 def checkpoint_config(checkpoint_path, device="cpu"):
     if not checkpoint_path:
         return None
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    checkpoint = torch_load_checkpoint(checkpoint_path, map_location="cpu")
     if not isinstance(checkpoint, dict):
         return None
     return checkpoint.get("config")

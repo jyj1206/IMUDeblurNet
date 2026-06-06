@@ -3,6 +3,8 @@ from pathlib import Path
 import torch
 from torch import nn
 
+from utils.utils_torch_load import torch_load_checkpoint
+
 from .modules.stage1_gyro_head import GlobalGyroHead
 from .modules.stage1_mscan import MSCAN
 
@@ -28,7 +30,7 @@ def _load_mscan_backbone(backbone, weights_path):
         return {"path": None, "loaded": 0, "skipped": 0, "missing": 0}
 
     weights_path = Path(weights_path)
-    checkpoint = torch.load(weights_path, map_location="cpu")
+    checkpoint = torch_load_checkpoint(weights_path, map_location="cpu")
     source_state = _state_dict_from_checkpoint(checkpoint)
     target_state = backbone.state_dict()
 

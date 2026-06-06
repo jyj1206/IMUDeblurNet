@@ -5,6 +5,8 @@ from pathlib import Path
 
 import torch
 
+from .utils_torch_load import torch_load_checkpoint
+
 
 class MetricAverager:
     def __init__(self, metric_names):
@@ -88,7 +90,7 @@ def load_model_weights(model, checkpoint_path, device="cpu", strict=True):
         return {"path": None, "loaded": False, "missing": 0, "unexpected": 0}
 
     checkpoint_path = Path(checkpoint_path)
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint = torch_load_checkpoint(checkpoint_path, map_location=device)
     if isinstance(checkpoint, dict):
         state = (
             checkpoint.get("model")
