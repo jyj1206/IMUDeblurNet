@@ -5,10 +5,13 @@ FULL_REFERENCE_METRICS = {"lpips", "topiq_fr"}
 NO_REFERENCE_METRICS = {"niqe", "topiq_nr"}
 
 
-def normalize_iqa_metric_names(names, realblur_preset=False):
+def normalize_iqa_metric_names(names, realblur_preset=False, has_target=True):
     metric_names = []
     if realblur_preset:
-        metric_names.extend(["lpips", "niqe", "topiq_fr"])
+        if has_target:
+            metric_names.extend(["lpips", "niqe", "topiq_fr"])
+        else:
+            metric_names.extend(["niqe", "topiq_nr"])
     metric_names.extend(names or [])
 
     normalized = []
@@ -21,6 +24,8 @@ def normalize_iqa_metric_names(names, realblur_preset=False):
                 f"Unknown IQA metric: {name}. "
                 "Use one of: lpips, niqe, topiq, topiq_fr, topiq_nr."
             )
+        if not has_target and key in FULL_REFERENCE_METRICS:
+            continue
         if key not in normalized:
             normalized.append(key)
     return normalized
@@ -59,12 +64,14 @@ class Stage2IqaMetrics:
                 )
 
     @torch.no_grad()
-    def __call__(self, pred, target):
+    def __call__(self, pred, target=None):
         pred = pred.clamp(0.0, 1.0)
-        target = target.clamp(0.0, 1.0)
+        target = target.clamp(0.0, 1.0) if target is not None else None
         values = {}
 
         if "lpips" in self.metric_names:
+            if target is None:
+                raise ValueError("LPIPS needs a target image.")
             pred_lpips = pred * 2.0 - 1.0
             target_lpips = target * 2.0 - 1.0
             values["lpips"] = _as_batch_values(
@@ -74,6 +81,8 @@ class Stage2IqaMetrics:
 
         for name, model in self.pyiqa_models.items():
             if name in FULL_REFERENCE_METRICS:
+                if target is None:
+                    raise ValueError(f"{name} needs a target image.")
                 metric_value = model(pred, target)
             else:
                 metric_value = model(pred)

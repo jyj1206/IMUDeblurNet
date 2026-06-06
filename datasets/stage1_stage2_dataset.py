@@ -46,6 +46,10 @@ def _default_timestamp_window(num_vectors, default_dt):
     return np.arange(int(num_vectors), dtype=np.float32) * float(default_dt)
 
 
+def _has_path(value):
+    return bool(str(value or "").strip())
+
+
 class Stage1Stage2Dataset(Dataset):
     def __init__(
         self,
@@ -63,6 +67,7 @@ class Stage1Stage2Dataset(Dataset):
         motion_field_root=None,
         motion_field_dir="camera_motion_field",
         motion_field_ext="npy",
+        allow_missing_gt=False,
     ):
         self.dataset_root = Path(dataset_root)
         self.split = resolve_split_name(self.dataset_root, split)
@@ -78,6 +83,7 @@ class Stage1Stage2Dataset(Dataset):
         self.motion_field_root = Path(motion_field_root) if motion_field_root else self.dataset_root
         self.motion_field_dir = motion_field_dir
         self.motion_field_ext = motion_field_ext
+        self.allow_missing_gt = bool(allow_missing_gt)
         self.sensor_cache = {}
         self.timestamp_cache = {}
 
@@ -88,6 +94,12 @@ class Stage1Stage2Dataset(Dataset):
         )
         self.fieldnames, self.rows = read_csv(self.metadata_path)
         self.layout = self._detect_layout()
+        self.has_gt = self._all_rows_have_gt()
+        if not self.has_gt and not self.allow_missing_gt:
+            raise ValueError(
+                f"{self.metadata_path} has missing sharp_path/target_sharp_path values. "
+                "Pass allow_missing_gt=True for no-reference real-blur evaluation."
+            )
 
     def _detect_layout(self):
         if not self.rows:
@@ -107,8 +119,17 @@ class Stage1Stage2Dataset(Dataset):
     def _image_paths(self, row):
         root = scene_root(self.split_root, row)
         if self.layout == "paired":
-            return root / row["blur_path"], root / row["sharp_path"]
-        return root / row["center_blur_path"], root / row["target_sharp_path"]
+            gt_path = root / row["sharp_path"] if self.has_gt else None
+            return root / row["blur_path"], gt_path
+        gt_path = root / row["target_sharp_path"] if self.has_gt else None
+        return root / row["center_blur_path"], gt_path
+
+    def _all_rows_have_gt(self):
+        if not self.rows:
+            return True
+        if self.layout == "paired":
+            return all(_has_path(row.get("sharp_path")) for row in self.rows)
+        return all(_has_path(row.get("target_sharp_path")) for row in self.rows)
 
     def _motion_field_path(self, row):
         scene_dir = row.get("scene_dir", "")
@@ -173,7 +194,7 @@ class Stage1Stage2Dataset(Dataset):
             "scene_dir": row.get("scene_dir", ""),
             "stem": Path(lq_path).stem,
             "lq_path": str(lq_path),
-            "gt_path": str(gt_path),
+            "gt_path": "" if gt_path is None else str(gt_path),
             "motion_field_path": str(self._motion_field_path(row)),
             "sensor_idx": self._sensor_idx(row),
         }
@@ -185,7 +206,7 @@ class Stage1Stage2Dataset(Dataset):
         row = self.rows[index]
         lq_path, gt_path = self._image_paths(row)
         blur = load_image(lq_path)
-        sharp = load_image(gt_path)
+        sharp = load_image(gt_path) if gt_path is not None else None
         stage1_image = _normalize_image(
             _resize_image(blur, self.stage1_image_size),
             self.stage1_mean,
@@ -195,10 +216,11 @@ class Stage1Stage2Dataset(Dataset):
         sample = {
             "stage1_image": stage1_image,
             "lq": blur,
-            "gt": sharp,
             "timestamp_window": self._load_timestamp_window(row),
             "meta": self._sample_meta(index, row, lq_path, gt_path),
         }
+        if sharp is not None:
+            sample["gt"] = sharp
         if self.load_target_gyro:
             sample["gyro"] = self._load_target_gyro(row)
         return sample
@@ -229,6 +251,7 @@ def build_stage1_stage2_dataset(
         motion_field_root=dataset_cfg.get("motion_field_root"),
         motion_field_dir=dataset_cfg.get("motion_field_dir", "camera_motion_field"),
         motion_field_ext=dataset_cfg.get("motion_field_ext", "npy"),
+        allow_missing_gt=dataset_cfg.get("allow_missing_gt", False),
     )
 
 

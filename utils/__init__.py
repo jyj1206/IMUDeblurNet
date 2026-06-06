@@ -5,7 +5,7 @@ from .utils_checkpoint import (
     prepare_run_dir,
     save_checkpoint,
 )
-from .utils_config import normalize_config
+from .utils_config import configure_stage2_motion_loading, normalize_config, stage2_uses_motion
 from .utils_dist import (
     cleanup_distributed,
     init_distributed,
@@ -16,7 +16,7 @@ from .utils_dist import (
 from .utils_eval_config import apply_dataset_overrides, load_eval_config
 from .utils_loss import PSNRLoss, build_criterion
 from .utils_logger import build_logger
-from .utils_metrics import batch_psnr, batch_ssim, evaluate_model, sample_psnr, sample_ssim
+from .utils_metrics import batch_psnr, batch_ssim, evaluate_model, sample_psnr, sample_ssim, stage2_forward
 from .utils_optim import build_optimizer, build_scheduler
 from .utils_plot import append_history, save_history
 from .utils_stage_pipeline import (
@@ -43,6 +43,7 @@ __all__ = [
     "camera_matrix_from_config",
     "checkpoint_iteration",
     "cleanup_distributed",
+    "configure_stage2_motion_loading",
     "evaluate_model",
     "init_distributed",
     "interval_due",
@@ -64,5 +65,7 @@ __all__ = [
     "sample_psnr",
     "sample_ssim",
     "set_seed",
+    "stage2_forward",
+    "stage2_uses_motion",
     "unwrap_model",
 ]

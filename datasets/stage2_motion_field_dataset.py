@@ -13,6 +13,10 @@ from .image_dataset_common import (
 )
 
 
+def _has_path(value):
+    return bool(str(value or "").strip())
+
+
 class Stage2MotionFieldDataset(Dataset):
     def __init__(
         self,
@@ -24,6 +28,8 @@ class Stage2MotionFieldDataset(Dataset):
         motion_field_dir="camera_motion_field",
         motion_field_ext="npy",
         motion_downsample=2,
+        load_motion_field=True,
+        allow_missing_gt=False,
     ):
         self.dataset_root = Path(dataset_root)
         self.split = resolve_split_name(self.dataset_root, split)
@@ -32,6 +38,8 @@ class Stage2MotionFieldDataset(Dataset):
         self.motion_field_dir = motion_field_dir
         self.motion_field_ext = motion_field_ext
         self.motion_downsample = int(motion_downsample)
+        self.load_motion_field = bool(load_motion_field)
+        self.allow_missing_gt = bool(allow_missing_gt)
         if self.patch_size and self.patch_size % self.motion_downsample != 0:
             raise ValueError(
                 f"patch_size must be divisible by motion_downsample: "
@@ -46,6 +54,12 @@ class Stage2MotionFieldDataset(Dataset):
         )
         self.fieldnames, self.rows = read_csv(self.metadata_path)
         self.layout = self._detect_layout()
+        self.has_gt = self._all_rows_have_gt()
+        if not self.has_gt and not self.allow_missing_gt:
+            raise ValueError(
+                f"{self.metadata_path} has missing sharp_path/target_sharp_path values. "
+                "Pass allow_missing_gt=True for no-reference real-blur evaluation."
+            )
 
     def _detect_layout(self):
         if not self.rows:
@@ -64,8 +78,17 @@ class Stage2MotionFieldDataset(Dataset):
     def _image_paths(self, row):
         root = scene_root(self.split_root, row)
         if self.layout == "paired":
-            return root / row["blur_path"], root / row["sharp_path"]
-        return root / row["center_blur_path"], root / row["target_sharp_path"]
+            gt_path = root / row["sharp_path"] if self.has_gt else None
+            return root / row["blur_path"], gt_path
+        gt_path = root / row["target_sharp_path"] if self.has_gt else None
+        return root / row["center_blur_path"], gt_path
+
+    def _all_rows_have_gt(self):
+        if not self.rows:
+            return True
+        if self.layout == "paired":
+            return all(_has_path(row.get("sharp_path")) for row in self.rows)
+        return all(_has_path(row.get("target_sharp_path")) for row in self.rows)
 
     def _motion_field_path(self, row):
         scene_dir = row.get("scene_dir", "")
@@ -81,7 +104,7 @@ class Stage2MotionFieldDataset(Dataset):
             "scene_dir": row.get("scene_dir", ""),
             "stem": Path(lq_path).stem,
             "lq_path": str(lq_path),
-            "gt_path": str(gt_path),
+            "gt_path": "" if gt_path is None else str(gt_path),
             "motion_field_path": str(motion_path),
         }
 
@@ -108,8 +131,8 @@ class Stage2MotionFieldDataset(Dataset):
         row = self.rows[index]
         lq_path, gt_path = self._image_paths(row)
         lq = load_image(lq_path)
-        gt = load_image(gt_path)
-        motion_field = self._load_motion_field(row)
+        gt = load_image(gt_path) if gt_path is not None else None
+        motion_field = self._load_motion_field(row) if self.load_motion_field else None
 
         if self.patch_size:
             _, image_h, image_w = lq.shape
@@ -120,21 +143,26 @@ class Stage2MotionFieldDataset(Dataset):
             top = int(torch.randint(0, image_h - self.patch_size + 1, (1,)).item())
             left = int(torch.randint(0, image_w - self.patch_size + 1, (1,)).item())
             lq = lq[:, top : top + self.patch_size, left : left + self.patch_size]
-            gt = gt[:, top : top + self.patch_size, left : left + self.patch_size]
+            if gt is not None:
+                gt = gt[:, top : top + self.patch_size, left : left + self.patch_size]
 
             mf_top = top // self.motion_downsample
             mf_left = left // self.motion_downsample
             mf_size = self.patch_size // self.motion_downsample
-            motion_field = motion_field[
-                :, mf_top : mf_top + mf_size, mf_left : mf_left + mf_size
-            ]
+            if motion_field is not None:
+                motion_field = motion_field[
+                    :, mf_top : mf_top + mf_size, mf_left : mf_left + mf_size
+                ]
 
-        return {
+        sample = {
             "lq": lq,
-            "gt": gt,
-            "motion_field": motion_field,
             "meta": self._sample_meta(index, row, lq_path, gt_path),
         }
+        if gt is not None:
+            sample["gt"] = gt
+        if motion_field is not None:
+            sample["motion_field"] = motion_field
+        return sample
 
 
 def build_stage2_dataset(config, split=None):
@@ -151,6 +179,8 @@ def build_stage2_dataset(config, split=None):
         motion_field_dir=data_cfg.get("motion_field_dir", "camera_motion_field"),
         motion_field_ext=data_cfg.get("motion_field_ext", "npy"),
         motion_downsample=data_cfg.get("motion_downsample", 2),
+        load_motion_field=data_cfg.get("load_motion_field", True),
+        allow_missing_gt=data_cfg.get("allow_missing_gt", False),
     )
 
 

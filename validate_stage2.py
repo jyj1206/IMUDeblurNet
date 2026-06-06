@@ -7,7 +7,13 @@ from tqdm import tqdm
 
 from datasets import build_stage2_dataset
 from models.stage2_deblur_model import build_model
-from utils import apply_dataset_overrides, build_criterion, load_eval_config
+from utils import (
+    apply_dataset_overrides,
+    build_criterion,
+    configure_stage2_motion_loading,
+    load_eval_config,
+    stage2_forward,
+)
 from utils.utils_eval import (
     GroupedMetricAverager,
     MetricAverager,
@@ -42,6 +48,16 @@ def parse_args():
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--non-strict", action="store_true")
+    parser.add_argument(
+        "--allow-missing-gt",
+        action="store_true",
+        help="Allow metadata rows without sharp_path and report only no-reference metrics.",
+    )
+    parser.add_argument(
+        "--image-only",
+        action="store_true",
+        help="Evaluate a Stage2 model with use_motion=False without loading CMF files.",
+    )
     parser.add_argument(
         "--extra-metrics",
         nargs="*",
@@ -79,6 +95,9 @@ def main():
         normalize=True,
     )
     cfg = apply_dataset_overrides(cfg, args, include_motion=True)
+    if args.allow_missing_gt or args.realblur_metrics:
+        cfg.setdefault("dataset", {})["allow_missing_gt"] = True
+    use_motion = configure_stage2_motion_loading(cfg, force_image_only=args.image_only)
     run_dir = create_run_dir(args.output_root, "stage2_validation")
     visual_dir = run_dir / "visuals"
     output_dir = run_dir / "outputs"
@@ -86,6 +105,7 @@ def main():
     split = args.split or cfg.get("validation", {}).get("split") or "val"
     val_cfg = cfg.get("validation", {})
     dataset = build_stage2_dataset(cfg, split=split)
+    has_gt = bool(getattr(dataset, "has_gt", True))
     loader = DataLoader(
         dataset,
         batch_size=int(args.batch_size or val_cfg.get("batch_size", cfg["dataset"].get("batch_size", 1))),
@@ -100,9 +120,11 @@ def main():
     extra_metric_names = normalize_iqa_metric_names(
         args.extra_metrics,
         realblur_preset=args.realblur_metrics,
+        has_target=has_gt,
     )
     iqa_metrics = Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
-    metric_names = ["loss", "psnr", "ssim", *extra_metric_names]
+    reference_metric_names = ["loss", "psnr", "ssim"] if has_gt else []
+    metric_names = [*reference_metric_names, *extra_metric_names]
     overall = MetricAverager(metric_names)
     by_type = GroupedMetricAverager(metric_names)
     sample_rows = []
@@ -120,18 +142,20 @@ def main():
             break
 
         blur = batch["lq"].to(device, non_blocking=True).float()
-        sharp = batch["gt"].to(device, non_blocking=True).float()
-        motion = batch["motion_field"].to(device, non_blocking=True).float()
-        pred_raw = model(blur, motion)
+        sharp = batch["gt"].to(device, non_blocking=True).float() if has_gt else None
+        pred_raw = stage2_forward(model, blur, batch, device, use_motion=use_motion)
         pred = pred_raw.clamp(0.0, 1.0)
-        psnr_values = sample_psnr(pred, sharp).detach().cpu()
-        ssim_values = sample_ssim(pred, sharp).detach().cpu()
+        psnr_values = sample_psnr(pred, sharp).detach().cpu() if has_gt else None
+        ssim_values = sample_ssim(pred, sharp).detach().cpu() if has_gt else None
         extra_values = iqa_metrics(pred, sharp) if iqa_metrics is not None else {}
-        if criterion.__class__.__name__.lower().startswith("psnr"):
-            mse = ((pred_raw - sharp) ** 2).flatten(1).mean(dim=1)
-            loss_values = (10.0 * torch.log10(mse + 1e-8)).detach().cpu()
+        if has_gt:
+            if criterion.__class__.__name__.lower().startswith("psnr"):
+                mse = ((pred_raw - sharp) ** 2).flatten(1).mean(dim=1)
+                loss_values = (10.0 * torch.log10(mse + 1e-8)).detach().cpu()
+            else:
+                loss_values = ((pred_raw - sharp).abs().flatten(1).mean(dim=1)).detach().cpu()
         else:
-            loss_values = ((pred_raw - sharp).abs().flatten(1).mean(dim=1)).detach().cpu()
+            loss_values = None
 
         batch_size = blur.shape[0]
         stems = batch_meta_list(batch, "stem", batch_size, "sample")
@@ -139,11 +163,15 @@ def main():
         indices = batch_meta_int_list(batch, "index", batch_size, 0)
 
         for idx in range(batch_size):
-            metrics = {
-                "loss": float(loss_values[idx]),
-                "psnr": float(psnr_values[idx]),
-                "ssim": float(ssim_values[idx]),
-            }
+            metrics = {}
+            if has_gt:
+                metrics.update(
+                    {
+                        "loss": float(loss_values[idx]),
+                        "psnr": float(psnr_values[idx]),
+                        "ssim": float(ssim_values[idx]),
+                    }
+                )
             for metric_name in extra_metric_names:
                 metrics[metric_name] = float(extra_values[metric_name][idx])
             overall.update(metrics)
@@ -162,9 +190,9 @@ def main():
                 visual = make_stage2_comparison(
                     blur[idx].detach().cpu(),
                     pred[idx].detach().cpu(),
-                    sharp[idx].detach().cpu(),
-                    psnr=metrics["psnr"],
-                    ssim=metrics["ssim"],
+                    sharp[idx].detach().cpu() if has_gt else None,
+                    psnr=metrics.get("psnr"),
+                    ssim=metrics.get("ssim"),
                     title=f"{types[idx]} / {stems[idx]}",
                 )
                 output_rgb = tensor_to_rgb_uint8(pred[idx].detach().cpu())
@@ -185,6 +213,8 @@ def main():
         "split": split,
         "max_batches": max_batches,
         "extra_metrics": extra_metric_names,
+        "has_gt": has_gt,
+        "use_motion": use_motion,
         "load_report": load_report,
         "saved_visuals": saved,
     }

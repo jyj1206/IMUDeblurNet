@@ -37,6 +37,13 @@ def batch_ssim(pred, target, window_size=11, eps=1e-8):
     return sample_ssim(pred, target, window_size=window_size, eps=eps).mean()
 
 
+def stage2_forward(model, blur, batch, device, use_motion=True):
+    if use_motion:
+        motion_field = batch["motion_field"].to(device, non_blocking=True).float()
+        return model(blur, motion_field)
+    return model(blur)
+
+
 def _validation_total(loader, max_batches):
     total = len(loader)
     if max_batches is not None:
@@ -53,6 +60,7 @@ def evaluate_model(
     epoch=0,
     max_batches=None,
     show_progress=False,
+    use_motion=True,
 ):
     was_training = model.training
     model.eval()
@@ -72,8 +80,7 @@ def evaluate_model(
 
         blur = batch["lq"].to(device, non_blocking=True).float()
         sharp = batch["gt"].to(device, non_blocking=True).float()
-        motion_field = batch["motion_field"].to(device, non_blocking=True).float()
-        pred = model(blur, motion_field)
+        pred = stage2_forward(model, blur, batch, device, use_motion=use_motion)
         loss = criterion(pred, sharp)
         batch_size = blur.shape[0]
 

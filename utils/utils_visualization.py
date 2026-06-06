@@ -53,28 +53,36 @@ def _put_text(image, text, org, scale=0.55, color=(245, 245, 245), thickness=1):
     )
 
 
-def make_stage2_comparison(blur, pred, sharp, psnr=None, ssim=None, title=None, max_panel_height=520):
+def make_stage2_comparison(blur, pred, sharp=None, psnr=None, ssim=None, title=None, max_panel_height=520):
     blur = tensor_to_rgb_uint8(blur)
     pred = tensor_to_rgb_uint8(pred)
-    sharp = tensor_to_rgb_uint8(sharp)
+    sharp = tensor_to_rgb_uint8(sharp) if sharp is not None else None
 
     h = min(max_panel_height, max(1, blur.shape[0]))
-    panels = [_resize_to_height(img, h) for img in (sharp, blur, pred)]
+    if sharp is None:
+        panel_images = (blur, pred)
+        labels = ["Blur", "Inference"]
+    else:
+        panel_images = (sharp, blur, pred)
+        labels = ["Sharp", "Blur", "Inference"]
+
+    panels = [_resize_to_height(img, h) for img in panel_images]
     panel_w = min(panel.shape[1] for panel in panels)
     panels = [cv2.resize(panel, (panel_w, h), interpolation=cv2.INTER_AREA) for panel in panels]
 
     separator_w = 8
     separator = np.full((h, separator_w, 3), 245, dtype=np.uint8)
-    body_rgb = np.concatenate(
-        [panels[0], separator, panels[1], separator, panels[2]],
-        axis=1,
-    )
+    body_parts = []
+    for panel_idx, panel in enumerate(panels):
+        if panel_idx:
+            body_parts.append(separator)
+        body_parts.append(panel)
+    body_rgb = np.concatenate(body_parts, axis=1)
     body_bgr = cv2.cvtColor(body_rgb, cv2.COLOR_RGB2BGR)
 
     label_h = 34
     header = np.full((label_h, body_bgr.shape[1], 3), 245, dtype=np.uint8)
-    labels = ["Sharp", "Blur", "Inference"]
-    x_offsets = [0, panel_w + separator_w, (panel_w + separator_w) * 2]
+    x_offsets = [(panel_w + separator_w) * idx for idx in range(len(labels))]
     for label, x0 in zip(labels, x_offsets):
         _put_text(
             header,

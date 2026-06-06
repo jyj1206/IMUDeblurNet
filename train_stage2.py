@@ -19,6 +19,7 @@ from utils import (
     build_optimizer,
     build_scheduler,
     checkpoint_iteration,
+    configure_stage2_motion_loading,
     cleanup_distributed,
     evaluate_model,
     init_distributed,
@@ -33,6 +34,7 @@ from utils import (
     save_checkpoint,
     save_config,
     save_history,
+    stage2_forward,
     unwrap_model,
 )
 
@@ -81,6 +83,7 @@ def main():
     if resume and Path(resume).is_dir() and (Path(resume) / "config.yaml").exists():
         cfg = normalize_config(load_config(Path(resume) / "config.yaml"))
         cfg.setdefault("train", {})["resume"] = resume
+    use_motion = configure_stage2_motion_loading(cfg)
 
     device, distributed = init_distributed(cfg.get("distributed", {}))
     run_dir, resume_checkpoint = prepare_run_dir(cfg, resume)
@@ -131,6 +134,7 @@ def main():
         f"patch={cfg['dataset'].get('patch_size', 256)} "
         f"loss={cfg['train'].get('loss', 'psnr')} "
         f"model={cfg['model'].get('name', 'motion_field_deblur')} "
+        f"use_motion={use_motion} "
         f"distributed={distributed} world_size={distributed_world_size(distributed)}"
     )
 
@@ -192,10 +196,9 @@ def main():
 
             blur = batch["lq"].to(device, non_blocking=True).float()
             sharp = batch["gt"].to(device, non_blocking=True).float()
-            motion_field = batch["motion_field"].to(device, non_blocking=True).float()
             optimizer.zero_grad(set_to_none=True)
 
-            pred = model(blur, motion_field)
+            pred = stage2_forward(model, blur, batch, device, use_motion=use_motion)
             loss = criterion(pred, sharp)
             loss.backward()
             optimizer.step()
@@ -256,6 +259,7 @@ def main():
                     epoch=current_epoch,
                     max_batches=max_val_batches,
                     show_progress=is_main_process(),
+                    use_motion=use_motion,
                 )
                 if is_main_process():
                     append_history(history, "val", current_iteration, val_metrics)

@@ -53,6 +53,11 @@ def parse_args():
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--default-dt", type=float, default=1.0 / 240.0)
+    parser.add_argument(
+        "--allow-missing-gt",
+        action="store_true",
+        help="Allow metadata rows without sharp_path and report only no-reference final-image metrics.",
+    )
     parser.add_argument("--camera-fx", type=float, default=None)
     parser.add_argument("--camera-fy", type=float, default=None)
     parser.add_argument("--camera-cx", type=float, default=None)
@@ -147,6 +152,8 @@ def main():
         normalize=True,
     )
     stage2_cfg = apply_dataset_overrides(stage2_cfg, args, include_motion=True)
+    if args.allow_missing_gt or args.realblur_metrics:
+        stage2_cfg.setdefault("dataset", {})["allow_missing_gt"] = True
     camera_cfg = {
         "camera": {
             **(stage1_cfg.get("camera") or {}),
@@ -170,7 +177,7 @@ def main():
 
     split = args.split or stage2_cfg.get("validation", {}).get("split") or "val"
     load_target_gyro = args.load_target_gyro
-    _, loader = build_stage1_stage2_loader(
+    dataset, loader = build_stage1_stage2_loader(
         stage1_cfg,
         stage2_cfg,
         split=split,
@@ -180,6 +187,7 @@ def main():
         load_target_gyro=load_target_gyro,
         default_dt=args.default_dt,
     )
+    has_gt = bool(getattr(dataset, "has_gt", True))
     stage1_model, stage2_model, load_report = load_stage1_stage2_models(
         stage1_cfg,
         stage2_cfg,
@@ -192,9 +200,10 @@ def main():
     extra_metric_names = normalize_iqa_metric_names(
         args.extra_metrics,
         realblur_preset=args.realblur_metrics,
+        has_target=has_gt,
     )
     iqa_metrics = Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
-    metric_names = ["loss", "psnr", "ssim"]
+    metric_names = ["loss", "psnr", "ssim"] if has_gt else []
     if load_target_gyro:
         metric_names.extend(["gyro_mae", "gyro_rmse"])
     metric_names.extend(extra_metric_names)
@@ -220,7 +229,7 @@ def main():
         if max_batches is not None and batch_idx >= int(max_batches):
             break
 
-        sharp = batch["gt"].to(device, non_blocking=True).float()
+        sharp = batch["gt"].to(device, non_blocking=True).float() if has_gt else None
         result = run_stage1_stage2_batch(
             stage1_model,
             stage2_model,
@@ -237,13 +246,17 @@ def main():
         cmf = result["cmf"].detach().cpu()
         pred_cpu = pred.detach().cpu()
 
-        psnr_values = sample_psnr(pred, sharp).detach().cpu()
-        ssim_values = sample_ssim(pred, sharp).detach().cpu()
+        psnr_values = sample_psnr(pred, sharp).detach().cpu() if has_gt else None
+        ssim_values = sample_ssim(pred, sharp).detach().cpu() if has_gt else None
         extra_values = iqa_metrics(pred, sharp) if iqa_metrics is not None else {}
-        loss_values = sample_stage2_loss(
-            pred_raw,
-            sharp,
-            stage2_cfg.get("train", {}).get("loss", "psnr"),
+        loss_values = (
+            sample_stage2_loss(
+                pred_raw,
+                sharp,
+                stage2_cfg.get("train", {}).get("loss", "psnr"),
+            )
+            if has_gt
+            else None
         )
         if load_target_gyro:
             gyro_mae_values = (pred_gyro - target_gyro).abs().flatten(1).mean(dim=1)
@@ -267,11 +280,15 @@ def main():
                 if not summary["finite"]:
                     finite_issue_counts[key] += 1
             finite_issues = finite_issue_label(**finite_summaries)
-            metrics = {
-                "loss": float(loss_values[idx]),
-                "psnr": float(psnr_values[idx]),
-                "ssim": float(ssim_values[idx]),
-            }
+            metrics = {}
+            if has_gt:
+                metrics.update(
+                    {
+                        "loss": float(loss_values[idx]),
+                        "psnr": float(psnr_values[idx]),
+                        "ssim": float(ssim_values[idx]),
+                    }
+                )
             if load_target_gyro:
                 metrics["gyro_mae"] = float(gyro_mae_values[idx])
                 metrics["gyro_rmse"] = float(gyro_rmse_values[idx])
@@ -324,9 +341,9 @@ def main():
                 stage2_visual = make_stage2_comparison(
                     batch["lq"][idx],
                     pred[idx].detach().cpu(),
-                    batch["gt"][idx],
-                    psnr=metrics["psnr"],
-                    ssim=metrics["ssim"],
+                    batch["gt"][idx] if has_gt else None,
+                    psnr=metrics.get("psnr"),
+                    ssim=metrics.get("ssim"),
                     title=f"B + CMF -> S | {types[idx]} / {stems[idx]}",
                 )
                 output_rgb = tensor_to_rgb_uint8(pred[idx].detach().cpu())
@@ -396,6 +413,7 @@ def main():
             "split": split,
             "max_batches": max_batches,
             "extra_metrics": extra_metric_names,
+            "has_gt": has_gt,
             "load_target_gyro": load_target_gyro,
             "load_report": load_report,
             "camera_matrix": camera_matrix.tolist(),

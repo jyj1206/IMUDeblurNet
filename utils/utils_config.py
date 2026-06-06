@@ -66,6 +66,7 @@ def normalize_config(config):
         "middle_blk_num",
         "enc_blk_nums",
         "dec_blk_nums",
+        "use_motion",
     ):
         if key in model and key not in model_args:
             model_args[key] = model[key]
@@ -100,3 +101,19 @@ def normalize_config(config):
     validation.setdefault("max_batches", None)
 
     return config
+
+
+def stage2_uses_motion(config, force_image_only=False):
+    if force_image_only:
+        return False
+    model = config.get("model", {})
+    model_args = model.get("args", {}) or {}
+    return bool(model_args.get("use_motion", model.get("use_motion", True)))
+
+
+def configure_stage2_motion_loading(config, force_image_only=False):
+    use_motion = stage2_uses_motion(config, force_image_only=force_image_only)
+    config.setdefault("dataset", {})["load_motion_field"] = use_motion
+    if force_image_only:
+        config.setdefault("model", {}).setdefault("args", {})["use_motion"] = False
+    return use_motion

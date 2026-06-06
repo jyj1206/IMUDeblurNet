@@ -8,7 +8,12 @@ from tqdm import tqdm
 
 from datasets import build_stage2_dataset
 from models.stage2_deblur_model import build_model
-from utils import apply_dataset_overrides, load_eval_config
+from utils import (
+    apply_dataset_overrides,
+    configure_stage2_motion_loading,
+    load_eval_config,
+    stage2_forward,
+)
 from utils.utils_eval import (
     MetricAverager,
     batch_meta_int_list,
@@ -40,6 +45,11 @@ def parse_args():
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--non-strict", action="store_true")
+    parser.add_argument(
+        "--image-only",
+        action="store_true",
+        help="Run a Stage2 model with use_motion=False without loading CMF files.",
+    )
     return parser.parse_args()
 
 
@@ -60,6 +70,7 @@ def main():
         normalize=True,
     )
     cfg = apply_dataset_overrides(cfg, args, include_motion=True)
+    use_motion = configure_stage2_motion_loading(cfg, force_image_only=args.image_only)
     run_dir = create_run_dir(args.output_root, "stage2_inference")
     visual_dir = run_dir / "visuals"
     output_dir = run_dir / "outputs"
@@ -86,8 +97,7 @@ def main():
     for batch in tqdm(loader, total=total_batches, desc="stage2 inference"):
         blur = batch["lq"].to(device, non_blocking=True).float()
         sharp = batch["gt"].to(device, non_blocking=True).float()
-        motion = batch["motion_field"].to(device, non_blocking=True).float()
-        pred = model(blur, motion).clamp(0.0, 1.0)
+        pred = stage2_forward(model, blur, batch, device, use_motion=use_motion).clamp(0.0, 1.0)
         psnr_values = sample_psnr(pred, sharp).detach().cpu()
         ssim_values = sample_ssim(pred, sharp).detach().cpu()
 
@@ -147,6 +157,7 @@ def main():
             "metadata_name": cfg.get("dataset", {}).get("metadata_name"),
             "split": split,
             "saved": saved,
+            "use_motion": use_motion,
             "load_report": load_report,
         },
     )
