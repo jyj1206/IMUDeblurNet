@@ -9,6 +9,7 @@ from tqdm import tqdm
 from datasets.stage1_gyro_dataset import build_stage1_loader
 from models.stage1_gyro_estimation_model import build_stage1_model
 from utils import (
+    build_stage1_loss,
     build_logger,
     cleanup_distributed,
     init_distributed,
@@ -43,17 +44,6 @@ def new_run_dir(config, resume=None):
         run_dir = result_root / f"{run_prefix}_{timestamp}_{suffix}"
         suffix += 1
     return run_dir
-
-
-def build_loss(name):
-    name = name.lower()
-    if name == "mse":
-        return torch.nn.MSELoss()
-    if name in ("l1", "mae"):
-        return torch.nn.L1Loss()
-    if name in ("smooth_l1", "huber"):
-        return torch.nn.SmoothL1Loss()
-    raise ValueError(f"Unknown train.loss: {name}")
 
 
 def build_optimizer(config, parameters):
@@ -234,7 +224,7 @@ def main():
         logger.info(f"pretrained_backbone={model.pretrained_report}")
     if distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device.index])
-    criterion = build_loss(config["train"].get("loss", "smooth_l1")).to(device)
+    criterion = build_stage1_loss(config["train"].get("loss", "smooth_l1")).to(device)
     optimizer = build_optimizer(config, model.parameters())
     epochs = int(config["train"].get("epochs", 50))
     scheduler, scheduler_step = build_scheduler(config, optimizer, len(train_loader), epochs)

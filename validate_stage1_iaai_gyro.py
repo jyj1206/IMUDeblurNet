@@ -6,9 +6,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from datasets.stage1_iaai_gyro_dataset import build_stage1_iaai_dataset
-from models.modules.iaai_losses import IAAIGyroAuxLoss, gyro_window_to_integrated_omega
 from models.stage1_iaai_gyro_model import build_stage1_iaai_model
-from utils import apply_dataset_overrides, load_eval_config
+from utils import IAAIGyroAuxLoss, apply_dataset_overrides, gyro_window_to_integrated_omega, load_eval_config
 from utils.utils_eval import (
     GroupedMetricAverager,
     MetricAverager,

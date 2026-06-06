@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from datasets.stage1_gyro_dataset import build_stage1_dataset
 from models.stage1_gyro_estimation_model import build_stage1_model
-from utils import apply_dataset_overrides, load_eval_config
+from utils import apply_dataset_overrides, build_stage1_loss, load_eval_config
 from utils.utils_eval import (
     GroupedMetricAverager,
     MetricAverager,
@@ -45,17 +45,6 @@ def resolve_device(name):
     return torch.device(name)
 
 
-def build_loss(name):
-    name = str(name).lower()
-    if name == "mse":
-        return torch.nn.MSELoss(reduction="none")
-    if name in ("l1", "mae"):
-        return torch.nn.L1Loss(reduction="none")
-    if name in ("smooth_l1", "huber"):
-        return torch.nn.SmoothL1Loss(reduction="none")
-    raise ValueError(f"Unknown stage1 loss: {name}")
-
-
 @torch.no_grad()
 def main():
     args = parse_args()
@@ -83,7 +72,7 @@ def main():
 
     model = build_stage1_model(cfg).to(device).eval()
     load_report = load_model_weights(model, args.checkpoint, device=device, strict=not args.non_strict)
-    criterion = build_loss(cfg.get("train", {}).get("loss", "smooth_l1"))
+    criterion = build_stage1_loss(cfg.get("train", {}).get("loss", "smooth_l1"), reduction="none")
     image_cfg = cfg.get("image", {})
 
     overall = MetricAverager(["loss", "mae", "rmse"])

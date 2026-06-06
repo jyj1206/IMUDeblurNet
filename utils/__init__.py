@@ -14,7 +14,20 @@ from .utils_dist import (
     unwrap_model,
 )
 from .utils_eval_config import apply_dataset_overrides, load_eval_config
-from .utils_loss import PSNRLoss, build_criterion
+from .utils_loss import (
+    CharbonnierLoss,
+    IAAIGyroAuxLoss,
+    PSNRLoss,
+    Stage1Stage2FinetuneLoss,
+    build_criterion,
+    build_scalar_loss,
+    build_stage1_loss,
+    build_stage1_stage2_finetune_loss,
+    cmf_epe,
+    gyro_window_to_integrated_omega,
+    temporal_smoothness,
+    timestamp_deltas,
+)
 from .utils_logger import build_logger
 from .utils_metrics import batch_psnr, batch_ssim, evaluate_model, sample_psnr, sample_ssim, stage2_forward
 from .utils_optim import build_optimizer, build_scheduler
@@ -31,6 +44,9 @@ from .utils_yaml import load_config, save_config
 
 __all__ = [
     "PSNRLoss",
+    "CharbonnierLoss",
+    "IAAIGyroAuxLoss",
+    "Stage1Stage2FinetuneLoss",
     "append_history",
     "apply_dataset_overrides",
     "batch_psnr",
@@ -38,13 +54,18 @@ __all__ = [
     "build_logger",
     "build_checkpoint_state",
     "build_criterion",
+    "build_scalar_loss",
+    "build_stage1_loss",
+    "build_stage1_stage2_finetune_loss",
     "build_optimizer",
     "build_scheduler",
     "camera_matrix_from_config",
     "checkpoint_iteration",
+    "cmf_epe",
     "cleanup_distributed",
     "configure_stage2_motion_loading",
     "evaluate_model",
+    "gyro_window_to_integrated_omega",
     "init_distributed",
     "interval_due",
     "is_main_process",
@@ -67,5 +88,7 @@ __all__ = [
     "set_seed",
     "stage2_forward",
     "stage2_uses_motion",
+    "temporal_smoothness",
+    "timestamp_deltas",
     "unwrap_model",
 ]

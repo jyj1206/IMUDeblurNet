@@ -7,9 +7,9 @@ import torch
 from tqdm import tqdm
 
 from datasets.stage1_iaai_gyro_dataset import build_stage1_iaai_loader
-from models.modules.iaai_losses import IAAIGyroAuxLoss
 from models.stage1_iaai_gyro_model import build_stage1_iaai_model
 from utils import (
+    IAAIGyroAuxLoss,
     build_logger,
     cleanup_distributed,
     init_distributed,
