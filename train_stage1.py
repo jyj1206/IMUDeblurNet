@@ -247,6 +247,10 @@ def load_checkpoint(path, model, optimizer, scheduler, device):
 def main():
     args = parse_args()
     config = load_config(args.config)
+    resume = args.resume or config.get("train", {}).get("resume")
+    if resume and Path(resume).is_dir() and (Path(resume) / "config.yaml").exists():
+        config = load_config(Path(resume) / "config.yaml")
+        config.setdefault("train", {})["resume"] = resume
     set_seed(config.get("train", {}).get("seed"))
 
     device, distributed = init_distributed(config.get("distributed", {}))
