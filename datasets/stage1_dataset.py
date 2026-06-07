@@ -42,7 +42,11 @@ def _normalize_image(image, mean, std):
     return (image - mean) / std
 
 
-class Stage1GyroDataset(Dataset):
+def _default_timestamp_window(num_vectors, default_dt):
+    return np.arange(int(num_vectors), dtype=np.float32) * float(default_dt)
+
+
+class Stage1Dataset(Dataset):
     def __init__(
         self,
         dataset_root,
@@ -54,6 +58,8 @@ class Stage1GyroDataset(Dataset):
         num_vectors=7,
         vector_start=0,
         vector_dim=3,
+        default_dt=1.0 / 240.0,
+        camera=None,
     ):
         self.dataset_root = Path(dataset_root)
         self.split = resolve_split_name(self.dataset_root, split)
@@ -73,6 +79,14 @@ class Stage1GyroDataset(Dataset):
         )
         self.fieldnames, self.rows = read_csv(self.metadata_path)
         self.layout = self._detect_layout()
+
+        camera = camera or {}
+        self.default_dt = float(default_dt)
+        self.native_size = tuple(camera.get("native_size", [1080, 1920]))
+        self.fx = float(camera.get("fx", 923.7181693))
+        self.fy = float(camera.get("fy", 924.51235192))
+        self.focal_length = camera.get("focal_length")
+        self.timestamp_cache = {}
 
     def _detect_layout(self):
         if not self.rows:
@@ -118,6 +132,39 @@ class Stage1GyroDataset(Dataset):
             )
         return torch.from_numpy(np.array(gyro, dtype=np.float32, copy=True))
 
+    def _load_timestamp_window(self, row):
+        scene_dir = row.get("scene_dir", "")
+        if not scene_dir:
+            window = _default_timestamp_window(self.num_vectors, self.default_dt)
+            return torch.from_numpy(window)
+
+        if scene_dir not in self.timestamp_cache:
+            path = self.split_root / scene_dir / "sensor_timestamps.npy"
+            self.timestamp_cache[scene_dir] = np.load(path, mmap_mode="r") if path.exists() else None
+
+        timestamps = self.timestamp_cache[scene_dir]
+        if timestamps is None:
+            window = _default_timestamp_window(self.num_vectors, self.default_dt)
+        else:
+            sensor_idx = self._sensor_idx(row)
+            window = np.asarray(timestamps[sensor_idx, : self.num_vectors], dtype=np.float32)
+            if window.shape[0] != self.num_vectors:
+                window = _default_timestamp_window(self.num_vectors, self.default_dt)
+        return torch.from_numpy(np.array(window, dtype=np.float32, copy=True))
+
+    def _scaled_focal_length(self):
+        if self.focal_length is not None:
+            return float(self.focal_length)
+        image_size = self.image_size
+        if image_size is None:
+            height, width = self.native_size
+        else:
+            height, width = int(image_size[0]), int(image_size[1])
+        native_h, native_w = float(self.native_size[0]), float(self.native_size[1])
+        fx = self.fx * (float(width) / native_w)
+        fy = self.fy * (float(height) / native_h)
+        return 0.5 * (fx + fy)
+
     def _sample_meta(self, index, row, image_path):
         return {
             "index": int(index),
@@ -137,19 +184,22 @@ class Stage1GyroDataset(Dataset):
         image = load_image(image_path)
         image = _resize_image(image, self.image_size)
         image = _normalize_image(image, self.normalize_mean, self.normalize_std)
-        gyro = self._load_gyro_window(row)
-        return {
+        sample = {
             "image": image,
-            "gyro": gyro,
+            "gyro": self._load_gyro_window(row),
+            "timestamp_window": self._load_timestamp_window(row),
+            "focal_length": torch.tensor(self._scaled_focal_length(), dtype=torch.float32),
             "meta": self._sample_meta(index, row, image_path),
         }
+        return sample
 
 
 def build_stage1_dataset(config, split=None):
     dataset_cfg = config["dataset"]
     target_cfg = config.get("target", {})
     image_cfg = config.get("image", {})
-    return Stage1GyroDataset(
+    camera_cfg = config.get("camera", {})
+    return Stage1Dataset(
         dataset_root=dataset_cfg["root"],
         split=split or dataset_cfg.get("split", "train"),
         metadata_name=dataset_cfg.get("metadata_name", "metadata.csv"),
@@ -159,6 +209,8 @@ def build_stage1_dataset(config, split=None):
         num_vectors=target_cfg.get("num_vectors", 7),
         vector_start=target_cfg.get("vector_start", 0),
         vector_dim=target_cfg.get("vector_dim", 3),
+        default_dt=config.get("time", {}).get("default_dt", 1.0 / 240.0),
+        camera=camera_cfg,
     )
 
 

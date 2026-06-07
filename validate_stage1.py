@@ -5,9 +5,9 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from datasets.stage1_gyro_dataset import build_stage1_dataset
-from models.stage1_gyro_estimation_model import build_stage1_model
-from utils import apply_dataset_overrides, build_stage1_loss, load_eval_config
+from datasets.stage1_dataset import build_stage1_dataset
+from models.stage1_model import build_stage1_model
+from utils import Stage1AuxLoss, apply_dataset_overrides, load_eval_config
 from utils.utils_eval import (
     GroupedMetricAverager,
     MetricAverager,
@@ -23,7 +23,7 @@ from utils.utils_visualization import make_stage1_gyro_visualization, write_imag
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Stage1 gyro validation by motion type.")
+    parser = argparse.ArgumentParser(description="Validate Stage1 gyro model.")
     parser.add_argument("--config", default=None)
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--dataset-root", default=None)
@@ -72,11 +72,18 @@ def main():
 
     model = build_stage1_model(cfg).to(device).eval()
     load_report = load_model_weights(model, args.checkpoint, device=device, strict=not args.non_strict)
-    criterion = build_stage1_loss(cfg.get("train", {}).get("loss", "smooth_l1"), reduction="none")
+    loss_cfg = cfg.get("loss", {})
+    criterion = Stage1AuxLoss(
+        gyro_loss=loss_cfg.get("gyro_loss", cfg.get("train", {}).get("loss", "smooth_l1")),
+        aux_loss=loss_cfg.get("aux_loss", "smooth_l1"),
+        aux_weight=loss_cfg.get("aux_weight", 0.05),
+        default_dt=cfg.get("time", {}).get("default_dt", 1.0 / 240.0),
+    )
     image_cfg = cfg.get("image", {})
 
-    overall = MetricAverager(["loss", "mae", "rmse"])
-    by_type = GroupedMetricAverager(["loss", "mae", "rmse"])
+    metric_names = ["loss", "gyro_loss", "aux_loss", "mae", "rmse", "pose_omega_mae"]
+    overall = MetricAverager(metric_names)
+    by_type = GroupedMetricAverager(metric_names)
     sample_rows = []
     saved = 0
 
@@ -93,9 +100,17 @@ def main():
 
         image = batch["image"].to(device, non_blocking=True).float()
         target_gyro = batch["gyro"].to(device, non_blocking=True).float()
-        pred_gyro = model(image)["gyro"]
-        per_item_loss = criterion(pred_gyro, target_gyro).flatten(1).mean(dim=1)
-        per_item_mae = (pred_gyro - target_gyro).abs().flatten(1).mean(dim=1)
+        timestamp_window = batch["timestamp_window"].to(device, non_blocking=True).float()
+        focal_length = batch["focal_length"].to(device, non_blocking=True).float()
+        outputs = model(image, focal_length=focal_length, return_aux=True)
+        _, loss_metrics, omega_gt = criterion(outputs, target_gyro, timestamp_window)
+        pred_gyro = outputs["gyro"]
+        pose = outputs.get("pose")
+        if pose is not None:
+            pose_omega_mae = (pose[:, :3] - omega_gt).abs().flatten(1).mean(dim=1)
+        else:
+            pose_omega_mae = torch.zeros(image.shape[0], device=device)
+        per_item_loss = (pred_gyro - target_gyro).abs().flatten(1).mean(dim=1)
         per_item_rmse = torch.sqrt(((pred_gyro - target_gyro) ** 2).flatten(1).mean(dim=1))
 
         batch_size = image.shape[0]
@@ -105,9 +120,12 @@ def main():
 
         for idx in range(batch_size):
             metrics = {
-                "loss": float(per_item_loss[idx].detach().cpu()),
-                "mae": float(per_item_mae[idx].detach().cpu()),
+                "loss": float(loss_metrics["loss"].detach().cpu()),
+                "gyro_loss": float(loss_metrics["gyro_loss"].detach().cpu()),
+                "aux_loss": float(loss_metrics["aux_loss"].detach().cpu()),
+                "mae": float(per_item_loss[idx].detach().cpu()),
                 "rmse": float(per_item_rmse[idx].detach().cpu()),
+                "pose_omega_mae": float(pose_omega_mae[idx].detach().cpu()),
             }
             overall.update(metrics)
             by_type.update(types[idx], metrics)
@@ -125,7 +143,7 @@ def main():
                     batch["image"][idx],
                     pred_gyro[idx].detach().cpu(),
                     target_gyro=target_gyro[idx].detach().cpu(),
-                    title=f"{types[idx]} / {stems[idx]}",
+                    title=f"Stage1 gyro | {types[idx]} / {stems[idx]}",
                     mean=image_cfg.get("mean"),
                     std=image_cfg.get("std"),
                 )
@@ -148,7 +166,7 @@ def main():
         "saved_visuals": saved,
     }
     save_json(run_dir / "metrics.json", metrics)
-    save_csv(run_dir / "samples.csv", sample_rows, ["index", "type", "stem", "loss", "mae", "rmse"])
+    save_csv(run_dir / "samples.csv", sample_rows, ["index", "type", "stem", *metric_names])
     print(f"saved: {run_dir}")
     print(metrics["overall"])
     print(metrics["by_type"])

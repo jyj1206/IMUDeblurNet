@@ -9,7 +9,58 @@ from .modules.iaai_decoders import DepthDecoder, FlowDecoder
 from .modules.iaai_pose_solver import DifferentiablePoseSolver
 from .modules.stage1_gyro_head import GlobalGyroHead
 from .modules.stage1_mscan import MSCAN
-from .stage1_gyro_estimation_model import _load_mscan_backbone, _state_dict_from_checkpoint, _strip_prefix
+
+
+def _state_dict_from_checkpoint(checkpoint):
+    if isinstance(checkpoint, dict):
+        if "state_dict" in checkpoint:
+            return checkpoint["state_dict"]
+        if "model" in checkpoint:
+            return checkpoint["model"]
+    return checkpoint
+
+
+def _strip_prefix(key, prefixes):
+    for prefix in prefixes:
+        if key.startswith(prefix):
+            return key[len(prefix) :]
+    return key
+
+
+def _load_mscan_backbone(backbone, weights_path):
+    if not weights_path:
+        return {"path": None, "loaded": 0, "skipped": 0, "missing": 0}
+
+    weights_path = Path(weights_path)
+    checkpoint = torch_load_checkpoint(weights_path, map_location="cpu")
+    source_state = _state_dict_from_checkpoint(checkpoint)
+    target_state = backbone.state_dict()
+
+    loadable = {}
+    skipped = 0
+    for key, value in source_state.items():
+        clean_key = _strip_prefix(
+            key,
+            (
+                "module.backbone.",
+                "model.backbone.",
+                "backbone.",
+                "module.",
+            ),
+        )
+        if clean_key in target_state and target_state[clean_key].shape == value.shape:
+            loadable[clean_key] = value
+        else:
+            skipped += 1
+
+    missing, unexpected = backbone.load_state_dict(loadable, strict=False)
+    return {
+        "path": str(weights_path),
+        "loaded": len(loadable),
+        "skipped": skipped,
+        "missing": len(missing),
+        "unexpected": len(unexpected),
+    }
 
 
 def _load_decoder_weights(model, weights_path):
@@ -43,7 +94,7 @@ def _load_decoder_weights(model, weights_path):
     }
 
 
-class Stage1IAAIGyroNet(nn.Module):
+class Stage1Net(nn.Module):
     def __init__(
         self,
         head_hidden=512,
@@ -61,10 +112,11 @@ class Stage1IAAIGyroNet(nn.Module):
         pose_ridge=1e-4,
         pose_max_points=4096,
         bgr255_input=True,
+        activation_clip=1e6,
     ):
         super().__init__()
         self.use_aux_branch = bool(use_aux_branch)
-        self.backbone = MSCAN(bgr255_input=bgr255_input)
+        self.backbone = MSCAN(bgr255_input=bgr255_input, activation_clip=activation_clip)
         self.gyro_head = GlobalGyroHead(
             in_channels=512,
             hidden_channels=head_hidden,
@@ -161,6 +213,7 @@ def _model_args(model_cfg):
         "pose_ridge",
         "pose_max_points",
         "bgr255_input",
+        "activation_clip",
     }
 
     kwargs = dict(model_cfg.get("args") or {})
@@ -175,20 +228,20 @@ def _model_args(model_cfg):
 
     unknown = sorted(set(kwargs) - allowed)
     if unknown:
-        raise ValueError(f"Unknown Stage1IAAIGyroNet args: {unknown}")
+        raise ValueError(f"Unknown Stage1Net args: {unknown}")
     return kwargs
 
 
-def build_stage1_iaai_model(config=None):
+def build_stage1_model(config=None):
     model_cfg = _model_config(config)
-    name = model_cfg.get("name", "stage1_iaai_gyro").lower()
-    if name not in ("stage1_iaai_gyro", "stage1_iaai_aux_gyro", "iaai_gyro"):
-        raise ValueError(f"Unknown stage1 IAAI model.name: {name}")
-    return Stage1IAAIGyroNet(**_model_args(model_cfg))
+    name = model_cfg.get("name", "stage1").lower()
+    if name != "stage1":
+        raise ValueError(f"Unknown stage1 model.name: {name}")
+    return Stage1Net(**_model_args(model_cfg))
 
 
 if __name__ == "__main__":
-    model = Stage1IAAIGyroNet()
+    model = Stage1Net()
     image = torch.randn(2, 3, 360, 480)
     focal = torch.tensor([230.0, 230.0])
     output = model(image, focal_length=focal)

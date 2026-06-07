@@ -1,9 +1,9 @@
-# Stage1 IAAI auxiliary experiment 01: regularized baseline.
+# Stage1 experiment 12: exp01 with weaker auxiliary pose loss.
 
 experiment:
-  name: stage1_iaai_exp01_regularized
+  name: stage1_exp12_regularized_aux002
   result_root: result
-  run_prefix: stage1_iaai_exp01_reg
+  run_prefix: stage1_exp12_reg_aux002
   output_dir: null
 dataset:
   root: data/IMUBlur
@@ -47,7 +47,7 @@ camera:
 time:
   default_dt: 0.004166666666666667
 model:
-  name: stage1_iaai_gyro
+  name: stage1
   args:
     backbone_weights: weights/segnext_iaai.pth
     decoder_weights: weights/segnext_iaai.pth
@@ -64,7 +64,7 @@ model:
 loss:
   gyro_loss: smooth_l1
   aux_loss: smooth_l1
-  aux_weight: 0.05
+  aux_weight: 0.02
 train:
   epochs: 50
   resume: null

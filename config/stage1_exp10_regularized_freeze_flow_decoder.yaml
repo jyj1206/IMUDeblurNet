@@ -1,9 +1,9 @@
-# Stage1 IAAI auxiliary experiment 02: regularized + frozen backbone.
+# Stage1 experiment 10: regularized + frozen flow decoder only.
 
 experiment:
-  name: stage1_iaai_exp02_regularized_freeze
+  name: stage1_exp10_regularized_freeze_flow_decoder
   result_root: result
-  run_prefix: stage1_iaai_exp02_reg_freeze
+  run_prefix: stage1_exp10_reg_freeze_flow_decoder
   output_dir: null
 dataset:
   root: data/IMUBlur
@@ -47,12 +47,14 @@ camera:
 time:
   default_dt: 0.004166666666666667
 model:
-  name: stage1_iaai_gyro
+  name: stage1
   args:
     backbone_weights: weights/segnext_iaai.pth
     decoder_weights: weights/segnext_iaai.pth
-    freeze_backbone: true
+    freeze_backbone: false
     freeze_decoders: false
+    freeze_flow_decoder: true
+    freeze_depth_decoder: false
     head_hidden: 512
     decoder_hidden: 128
     num_vectors: 7

@@ -1,0 +1,98 @@
+# Stage1 frozen, Stage2-only PSNR fine-tuning without loading target CMF.
+# Patch size stays at 256; this removes unnecessary CMF target I/O for image-only training.
+
+experiment:
+  name: stage1_stage2_finetune_freeze_stage1_fast_no_cmf_target_lr2e-6_50k
+  result_root: result
+  run_prefix: stage1_stage2_ft_freeze_stage1_fast_lr2e-6_50k
+  output_dir: null
+
+dataset:
+  root: data/IMUBlur
+  split: train
+  metadata_name: metadata.csv
+  patch_size: 256
+  batch_size: 4
+  num_workers: 4
+  drop_last: false
+
+  motion_field_root: null
+  motion_field_dir: camera_motion_field
+  motion_field_ext: npy
+  motion_downsample: 2
+  load_target_cmf: false
+
+validation:
+  enabled: true
+  split: val
+  batch_size: 1
+  num_workers: 2
+  interval: 1000
+  max_batches: null
+  load_target_cmf: false
+
+stage1:
+  checkpoint: weights/best_stage1.pt
+  config: null
+  strict: true
+  freeze: true
+  lr: 0.00001
+
+stage2:
+  checkpoint: weights/best_stage2.pt
+  config: null
+  strict: true
+  freeze: false
+  lr: 0.000002
+
+camera:
+  native_size:
+    - 1080
+    - 1920
+  fx: 923.7181693
+  fy: 924.51235192
+  cx: 969.4457779
+  cy: 532.9090534
+
+time:
+  default_dt: 0.004166666666666667
+
+loss:
+  image_loss: psnr
+  gyro_loss: smooth_l1
+  cmf_loss: smooth_l1
+  image_weight: 1.0
+  gyro_weight: 0.0
+  cmf_weight: 0.0
+  cmf_epe_weight: 0.0
+  smooth_weight: 0.0
+
+train:
+  iterations: 50000
+  epochs: null
+  resume: null
+  loss: psnr
+  log_interval: 100
+  checkpoint_interval: 1000
+  grad_clip_norm: 1.0
+  freeze_unused_stage1_aux: true
+  seed: 1234
+
+optimizer:
+  name: adamw
+  lr: 0.000002
+  betas:
+    - 0.9
+    - 0.999
+  weight_decay: 0.0001
+
+scheduler:
+  name: cosine
+  t_max: null
+  eta_min: 0.00000005
+
+distributed:
+  enabled: true
+  backend: auto
+  find_unused_parameters: false
+

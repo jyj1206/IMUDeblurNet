@@ -6,6 +6,57 @@ from .utils_torch_load import torch_load_checkpoint
 from .utils_yaml import load_config
 
 
+_LEGACY_STAGE1_MODEL_NAMES = {
+    "stage1_iaai_gyro",
+    "stage1_iaai_aux_gyro",
+    "iaai_gyro",
+}
+_LEGACY_BASELINE_STAGE1_MODEL_NAMES = {
+    "stage1_gyro_estimation",
+    "blur_to_gyro",
+    "blur_to_gyro_net",
+}
+
+
+def _replace_legacy_stage1_text(value):
+    if isinstance(value, str):
+        return value.replace("stage1_iaai", "stage1")
+    return value
+
+
+def upgrade_stage1_config_names(config):
+    if not isinstance(config, dict):
+        return config
+
+    model_cfg = config.get("model")
+    if isinstance(model_cfg, dict):
+        name = str(model_cfg.get("name", "")).lower()
+        if name in _LEGACY_STAGE1_MODEL_NAMES:
+            model_cfg["name"] = "stage1"
+        elif name in _LEGACY_BASELINE_STAGE1_MODEL_NAMES:
+            model_cfg["name"] = "stage1"
+            args_cfg = model_cfg.setdefault("args", {})
+            if isinstance(args_cfg, dict):
+                args_cfg.setdefault("use_aux_branch", False)
+
+    exp_cfg = config.get("experiment")
+    if isinstance(exp_cfg, dict):
+        for key in ("name", "run_prefix"):
+            if key in exp_cfg:
+                exp_cfg[key] = _replace_legacy_stage1_text(exp_cfg[key])
+
+    for value in config.values():
+        if isinstance(value, dict):
+            upgrade_stage1_config_names(value)
+        elif isinstance(value, list):
+            for item in value:
+                upgrade_stage1_config_names(item)
+    return config
+
+
+_upgrade_stage1_config_names = upgrade_stage1_config_names
+
+
 def checkpoint_config(checkpoint_path, device="cpu"):
     if not checkpoint_path:
         return None
@@ -29,6 +80,7 @@ def load_eval_config(config_path=None, checkpoint_path=None, device="cpu", norma
         )
 
     config = deepcopy(config)
+    config = upgrade_stage1_config_names(config)
     if normalize:
         config = normalize_config(config)
     return config, source

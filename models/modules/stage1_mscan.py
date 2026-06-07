@@ -93,8 +93,9 @@ class SpatialAttention(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, dim, mlp_ratio=4.0, drop=0.0, act_layer=nn.GELU):
+    def __init__(self, dim, mlp_ratio=4.0, drop=0.0, act_layer=nn.GELU, activation_clip=1e6):
         super().__init__()
+        self.activation_clip = None if activation_clip is None else float(activation_clip)
         self.norm1 = nn.BatchNorm2d(dim)
         self.attn = SpatialAttention(dim)
         self.drop_path = nn.Identity()
@@ -113,11 +114,19 @@ class Block(nn.Module):
             layer_scale_init_value * torch.ones(dim), requires_grad=True
         )
 
+    def _stabilize(self, x):
+        if self.activation_clip is None or self.activation_clip <= 0:
+            return x
+        clip = self.activation_clip
+        return torch.nan_to_num(x, nan=0.0, posinf=clip, neginf=-clip).clamp(-clip, clip)
+
     def forward(self, x, height, width):
         batch, tokens, channels = x.shape
         x = x.permute(0, 2, 1).view(batch, channels, height, width)
         x = x + self.drop_path(self.layer_scale_1[:, None, None] * self.attn(self.norm1(x)))
+        x = self._stabilize(x)
         x = x + self.drop_path(self.layer_scale_2[:, None, None] * self.mlp(self.norm2(x)))
+        x = self._stabilize(x)
         return x.view(batch, channels, tokens).permute(0, 2, 1)
 
 
@@ -151,6 +160,7 @@ class MSCAN(nn.Module):
         depths=None,
         drop_rate=0.0,
         bgr255_input=True,
+        activation_clip=1e6,
     ):
         super().__init__()
         self.in_channels = int(in_channels)
@@ -160,6 +170,7 @@ class MSCAN(nn.Module):
         self.drop_rate = float(drop_rate)
         self.num_stages = len(self.embed_dims)
         self.bgr255_input = bool(bgr255_input)
+        self.activation_clip = activation_clip
 
         if not (len(self.embed_dims) == len(self.mlp_ratios) == len(self.depths)):
             raise ValueError("embed_dims, mlp_ratios, and depths must have the same length.")
@@ -181,6 +192,7 @@ class MSCAN(nn.Module):
                         dim=self.embed_dims[idx],
                         mlp_ratio=self.mlp_ratios[idx],
                         drop=self.drop_rate,
+                        activation_clip=self.activation_clip,
                     )
                     for _ in range(self.depths[idx])
                 ]
@@ -216,4 +228,3 @@ class MSCAN(nn.Module):
             features.append(x)
 
         return {"features": features}
-

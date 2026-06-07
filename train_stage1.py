@@ -6,10 +6,10 @@ from pathlib import Path
 import torch
 from tqdm import tqdm
 
-from datasets.stage1_gyro_dataset import build_stage1_loader
-from models.stage1_gyro_estimation_model import build_stage1_model
+from datasets.stage1_dataset import build_stage1_loader
+from models.stage1_model import build_stage1_model
 from utils import (
-    build_stage1_loss,
+    Stage1AuxLoss,
     build_logger,
     cleanup_distributed,
     init_distributed,
@@ -24,8 +24,8 @@ from utils.utils_torch_load import torch_load_checkpoint
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="config/stage1_gyro.yaml")
+    parser = argparse.ArgumentParser(description="Train Stage1 gyro model.")
+    parser.add_argument("--config", default="config/stage1.yaml")
     parser.add_argument("--resume", default=None)
     return parser.parse_args()
 
@@ -99,48 +99,79 @@ def metrics_from_sums(metrics):
     count = max(1.0, metrics["count"])
     result = {
         "loss": metrics["loss_sum"] / count,
+        "gyro_loss": metrics["gyro_loss_sum"] / count,
+        "aux_loss": metrics["aux_loss_sum"] / count,
         "mae": metrics["mae_sum"] / count,
+        "rmse": metrics["rmse_sum"] / count,
         "count": int(metrics["count"]),
     }
     for key, value in metrics.items():
-        if key not in ("loss_sum", "mae_sum", "count"):
+        if key not in (
+            "loss_sum",
+            "gyro_loss_sum",
+            "aux_loss_sum",
+            "mae_sum",
+            "rmse_sum",
+            "count",
+        ):
             result[key] = int(value)
     return result
+
+
+def update_running(running, loss_metrics, batch_size):
+    running["loss_sum"] += float(loss_metrics["loss"].detach().cpu()) * batch_size
+    running["gyro_loss_sum"] += float(loss_metrics["gyro_loss"].detach().cpu()) * batch_size
+    running["aux_loss_sum"] += float(loss_metrics["aux_loss"].detach().cpu()) * batch_size
+    running["mae_sum"] += float(loss_metrics["mae"].detach().cpu()) * batch_size
+    running["rmse_sum"] += float(loss_metrics["rmse"].detach().cpu()) * batch_size
+    running["count"] += batch_size
+
+
+def empty_metrics():
+    return {
+        "loss_sum": 0.0,
+        "gyro_loss_sum": 0.0,
+        "aux_loss_sum": 0.0,
+        "mae_sum": 0.0,
+        "rmse_sum": 0.0,
+        "count": 0.0,
+        "pred_nonfinite": 0.0,
+        "target_nonfinite": 0.0,
+        "pose_nonfinite": 0.0,
+        "loss_nonfinite": 0.0,
+    }
 
 
 @torch.no_grad()
 def evaluate(model, loader, criterion, device, show_progress=False):
     was_training = model.training
     model.eval()
-    metrics = {
-        "loss_sum": 0.0,
-        "mae_sum": 0.0,
-        "count": 0.0,
-        "pred_nonfinite": 0.0,
-        "target_nonfinite": 0.0,
-        "loss_nonfinite": 0.0,
-    }
+    metrics = empty_metrics()
     batches = tqdm(loader, desc="val", leave=False, disable=not show_progress)
     for batch in batches:
         image = batch["image"].to(device, non_blocking=True).float()
         target_gyro = batch["gyro"].to(device, non_blocking=True).float()
-        pred_gyro = model(image)["gyro"]
-        loss = criterion(pred_gyro, target_gyro)
+        timestamp_window = batch["timestamp_window"].to(device, non_blocking=True).float()
+        focal_length = batch["focal_length"].to(device, non_blocking=True).float()
+        outputs = model(image, focal_length=focal_length, return_aux=True)
+        loss, loss_metrics, _ = criterion(outputs, target_gyro, timestamp_window)
         batch_size = image.shape[0]
 
+        pred_gyro = outputs["gyro"]
         pred_finite = torch.isfinite(pred_gyro).flatten(1).all(dim=1)
         target_finite = torch.isfinite(target_gyro).flatten(1).all(dim=1)
         metrics["pred_nonfinite"] += int((~pred_finite).sum().detach().cpu())
         metrics["target_nonfinite"] += int((~target_finite).sum().detach().cpu())
+        if "pose" in outputs:
+            pose_finite = torch.isfinite(outputs["pose"]).flatten(1).all(dim=1)
+            metrics["pose_nonfinite"] += int((~pose_finite).sum().detach().cpu())
         if not torch.isfinite(loss):
             metrics["loss_nonfinite"] += batch_size
 
-        metrics["loss_sum"] += float(loss.detach().cpu()) * batch_size
-        metrics["mae_sum"] += float((pred_gyro - target_gyro).abs().mean().detach().cpu()) * batch_size
-        metrics["count"] += batch_size
+        update_running(metrics, loss_metrics, batch_size)
         if show_progress:
-            current = metrics_from_sums(metrics)
-            batches.set_postfix(loss=current["loss"], mae=current["mae"])
+            batches.set_postfix(metrics_from_sums(metrics))
+
     if was_training:
         model.train()
     return metrics_from_sums(reduce_metrics(metrics, device))
@@ -167,6 +198,8 @@ def save_best_metrics(run_dir, epoch, metrics):
         "epoch": int(epoch),
         "best_val_loss": float(metrics["loss"]),
         "mae_at_best_loss": float(metrics["mae"]),
+        "rmse_at_best_loss": float(metrics["rmse"]),
+        "aux_loss_at_best_loss": float(metrics["aux_loss"]),
         "count": int(metrics.get("count", 0)),
     }
     path = Path(run_dir) / "best_metrics.json"
@@ -222,10 +255,17 @@ def main():
 
     model = build_stage1_model(config).to(device)
     if is_main_process() and hasattr(model, "pretrained_report"):
-        logger.info(f"pretrained_backbone={model.pretrained_report}")
+        logger.info(f"pretrained={model.pretrained_report}")
     if distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device.index])
-    criterion = build_stage1_loss(config["train"].get("loss", "smooth_l1")).to(device)
+
+    loss_cfg = config.get("loss", {})
+    criterion = Stage1AuxLoss(
+        gyro_loss=loss_cfg.get("gyro_loss", config.get("train", {}).get("loss", "smooth_l1")),
+        aux_loss=loss_cfg.get("aux_loss", "smooth_l1"),
+        aux_weight=loss_cfg.get("aux_weight", 0.05),
+        default_dt=config.get("time", {}).get("default_dt", 1.0 / 240.0),
+    ).to(device)
     optimizer = build_optimizer(config, model.parameters())
     epochs = int(config["train"].get("epochs", 50))
     scheduler, scheduler_step = build_scheduler(config, optimizer, len(train_loader), epochs)
@@ -252,7 +292,7 @@ def main():
         if train_sampler:
             train_sampler.set_epoch(epoch)
         model.train()
-        running = {"loss_sum": 0.0, "mae_sum": 0.0, "count": 0.0}
+        running = empty_metrics()
         progress = tqdm(
             train_loader,
             desc=f"train epoch {epoch + 1}/{epochs}",
@@ -261,23 +301,25 @@ def main():
         for step, batch in enumerate(progress, start=1):
             image = batch["image"].to(device, non_blocking=True).float()
             target_gyro = batch["gyro"].to(device, non_blocking=True).float()
+            timestamp_window = batch["timestamp_window"].to(device, non_blocking=True).float()
+            focal_length = batch["focal_length"].to(device, non_blocking=True).float()
             optimizer.zero_grad(set_to_none=True)
-            pred_gyro = model(image)["gyro"]
-            loss = criterion(pred_gyro, target_gyro)
+            outputs = model(image, focal_length=focal_length, return_aux=True)
+            loss, loss_metrics, _ = criterion(outputs, target_gyro, timestamp_window)
             loss.backward()
             optimizer.step()
             if scheduler is not None and scheduler_step == "iteration":
                 scheduler.step()
 
             batch_size = image.shape[0]
-            running["loss_sum"] += float(loss.detach().cpu()) * batch_size
-            running["mae_sum"] += float((pred_gyro - target_gyro).abs().mean().detach().cpu()) * batch_size
-            running["count"] += batch_size
+            if not torch.isfinite(loss):
+                running["loss_nonfinite"] += batch_size
+            update_running(running, loss_metrics, batch_size)
 
             if is_main_process() and (step % log_interval == 0 or step == len(train_loader)):
                 metrics = metrics_from_sums(running)
                 lr = optimizer.param_groups[0]["lr"]
-                progress.set_postfix(loss=metrics["loss"], mae=metrics["mae"], lr=lr)
+                progress.set_postfix(loss=metrics["loss"], mae=metrics["mae"], aux=metrics["aux_loss"], lr=lr)
 
         if scheduler is not None and scheduler_step == "epoch":
             scheduler.step()
@@ -288,6 +330,8 @@ def main():
         if is_main_process():
             logger.info(
                 f"epoch={epoch + 1}/{epochs} train_loss={train_metrics['loss']:.6f} "
+                f"train_gyro_loss={train_metrics['gyro_loss']:.6f} "
+                f"train_aux_loss={train_metrics['aux_loss']:.6f} "
                 f"train_mae={train_metrics['mae']:.6f}"
             )
 
@@ -305,15 +349,18 @@ def main():
                 nonfinite_msg = ""
                 if any(
                     int(val_metrics.get(key, 0)) > 0
-                    for key in ("pred_nonfinite", "target_nonfinite", "loss_nonfinite")
+                    for key in ("pred_nonfinite", "target_nonfinite", "pose_nonfinite", "loss_nonfinite")
                 ):
                     nonfinite_msg = (
                         f" pred_nonfinite={int(val_metrics.get('pred_nonfinite', 0))}"
                         f" target_nonfinite={int(val_metrics.get('target_nonfinite', 0))}"
+                        f" pose_nonfinite={int(val_metrics.get('pose_nonfinite', 0))}"
                         f" loss_nonfinite={int(val_metrics.get('loss_nonfinite', 0))}"
                     )
                 logger.info(
                     f"epoch={epoch + 1}/{epochs} val_loss={val_metrics['loss']:.6f} "
+                    f"val_gyro_loss={val_metrics['gyro_loss']:.6f} "
+                    f"val_aux_loss={val_metrics['aux_loss']:.6f} "
                     f"val_mae={val_metrics['mae']:.6f}{nonfinite_msg}"
                 )
                 if val_metrics["loss"] < best_val_loss:

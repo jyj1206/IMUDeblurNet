@@ -16,7 +16,6 @@ from utils import (
     build_logger,
     build_optimizer,
     build_scheduler,
-    camera_matrix_from_config,
     cleanup_distributed,
     init_distributed,
     interval_due,
@@ -33,10 +32,12 @@ from utils import (
     unwrap_model,
 )
 from utils.utils_eval import load_model_weights
+from utils.utils_eval_config import upgrade_stage1_config_names
 from utils.utils_loss import (
     build_stage1_stage2_finetune_loss,
     cmf_epe,
 )
+from utils.utils_stage_pipeline import camera_matrix_from_config
 from utils.utils_torch_load import torch_load_checkpoint
 
 
@@ -233,6 +234,7 @@ def main():
     if resume and Path(resume).is_dir() and (Path(resume) / "config.yaml").exists():
         cfg = load_config(Path(resume) / "config.yaml")
         cfg.setdefault("train", {})["resume"] = resume
+    cfg = upgrade_stage1_config_names(cfg)
 
     set_seed(cfg.get("train", {}).get("seed"))
     stage1_cfg, stage1_source = _load_component_config(cfg.get("stage1", {}), None, normalize=False)

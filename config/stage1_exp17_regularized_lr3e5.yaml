@@ -1,9 +1,9 @@
-# Stage1 IAAI auxiliary experiment 15: exp01 with stronger head dropout.
+# Stage1 experiment 17: exp01 with a lower learning rate.
 
 experiment:
-  name: stage1_iaai_exp15_regularized_dropout030
+  name: stage1_exp17_regularized_lr3e5
   result_root: result
-  run_prefix: stage1_iaai_exp15_reg_dropout030
+  run_prefix: stage1_exp17_reg_lr3e5
   output_dir: null
 dataset:
   root: data/IMUBlur
@@ -47,7 +47,7 @@ camera:
 time:
   default_dt: 0.004166666666666667
 model:
-  name: stage1_iaai_gyro
+  name: stage1
   args:
     backbone_weights: weights/segnext_iaai.pth
     decoder_weights: weights/segnext_iaai.pth
@@ -57,7 +57,7 @@ model:
     decoder_hidden: 128
     num_vectors: 7
     vector_dim: 3
-    dropout: 0.3
+    dropout: 0.2
     use_aux_branch: true
     pose_ridge: 0.0001
     pose_max_points: 4096
@@ -74,14 +74,14 @@ train:
   seed: 1234
 optimizer:
   name: adamw
-  lr: 0.00005
+  lr: 0.00003
   betas:
     - 0.9
     - 0.999
   weight_decay: 0.0005
 scheduler:
   name: onecycle
-  max_lr: 0.00005
+  max_lr: 0.00003
   pct_start: 0.3
   div_factor: 25.0
   final_div_factor: 10000.0

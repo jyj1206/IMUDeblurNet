@@ -1,9 +1,9 @@
-# Stage1 IAAI auxiliary experiment 09: regularized + frozen backbone and flow/depth decoders.
+# Stage1 experiment 15: exp01 with stronger head dropout.
 
 experiment:
-  name: stage1_iaai_exp09_regularized_freeze_backbone_decoders
+  name: stage1_exp15_regularized_dropout030
   result_root: result
-  run_prefix: stage1_iaai_exp09_reg_freeze_backbone_decoders
+  run_prefix: stage1_exp15_reg_dropout030
   output_dir: null
 dataset:
   root: data/IMUBlur
@@ -47,17 +47,17 @@ camera:
 time:
   default_dt: 0.004166666666666667
 model:
-  name: stage1_iaai_gyro
+  name: stage1
   args:
     backbone_weights: weights/segnext_iaai.pth
     decoder_weights: weights/segnext_iaai.pth
-    freeze_backbone: true
-    freeze_decoders: true
+    freeze_backbone: false
+    freeze_decoders: false
     head_hidden: 512
     decoder_hidden: 128
     num_vectors: 7
     vector_dim: 3
-    dropout: 0.2
+    dropout: 0.3
     use_aux_branch: true
     pose_ridge: 0.0001
     pose_max_points: 4096

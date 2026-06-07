@@ -1,9 +1,9 @@
-# Stage1 IAAI auxiliary experiment 19: exp01 with denser LLS pose sampling.
+# Stage1 experiment 11: regularized + frozen depth decoder only.
 
 experiment:
-  name: stage1_iaai_exp19_regularized_pose8192
+  name: stage1_exp11_regularized_freeze_depth_decoder
   result_root: result
-  run_prefix: stage1_iaai_exp19_reg_pose8192
+  run_prefix: stage1_exp11_reg_freeze_depth_decoder
   output_dir: null
 dataset:
   root: data/IMUBlur
@@ -47,12 +47,14 @@ camera:
 time:
   default_dt: 0.004166666666666667
 model:
-  name: stage1_iaai_gyro
+  name: stage1
   args:
     backbone_weights: weights/segnext_iaai.pth
     decoder_weights: weights/segnext_iaai.pth
     freeze_backbone: false
     freeze_decoders: false
+    freeze_flow_decoder: false
+    freeze_depth_decoder: true
     head_hidden: 512
     decoder_hidden: 128
     num_vectors: 7
@@ -60,7 +62,7 @@ model:
     dropout: 0.2
     use_aux_branch: true
     pose_ridge: 0.0001
-    pose_max_points: 8192
+    pose_max_points: 4096
 loss:
   gyro_loss: smooth_l1
   aux_loss: smooth_l1

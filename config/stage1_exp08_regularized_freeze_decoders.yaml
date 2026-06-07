@@ -1,9 +1,9 @@
-# Stage1 IAAI auxiliary experiment 08: regularized + frozen flow/depth decoders.
+# Stage1 experiment 08: regularized + frozen flow/depth decoders.
 
 experiment:
-  name: stage1_iaai_exp08_regularized_freeze_decoders
+  name: stage1_exp08_regularized_freeze_decoders
   result_root: result
-  run_prefix: stage1_iaai_exp08_reg_freeze_decoders
+  run_prefix: stage1_exp08_reg_freeze_decoders
   output_dir: null
 dataset:
   root: data/IMUBlur
@@ -47,7 +47,7 @@ camera:
 time:
   default_dt: 0.004166666666666667
 model:
-  name: stage1_iaai_gyro
+  name: stage1
   args:
     backbone_weights: weights/segnext_iaai.pth
     decoder_weights: weights/segnext_iaai.pth

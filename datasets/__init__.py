@@ -3,15 +3,10 @@ from .stage1_stage2_dataset import (
     build_stage1_stage2_dataset,
     build_stage1_stage2_loader,
 )
-from .stage1_gyro_dataset import (
-    Stage1GyroDataset,
+from .stage1_dataset import (
+    Stage1Dataset,
     build_stage1_dataset,
     build_stage1_loader,
-)
-from .stage1_iaai_gyro_dataset import (
-    Stage1IAAIGyroDataset,
-    build_stage1_iaai_dataset,
-    build_stage1_iaai_loader,
 )
 from .stage2_motion_field_dataset import (
     Stage2MotionFieldDataset,
@@ -20,14 +15,11 @@ from .stage2_motion_field_dataset import (
 )
 
 __all__ = [
-    "Stage1GyroDataset",
-    "Stage1IAAIGyroDataset",
+    "Stage1Dataset",
     "Stage1Stage2Dataset",
     "Stage2MotionFieldDataset",
     "build_stage1_dataset",
     "build_stage1_loader",
-    "build_stage1_iaai_dataset",
-    "build_stage1_iaai_loader",
     "build_stage1_stage2_dataset",
     "build_stage1_stage2_loader",
     "build_stage2_dataset",

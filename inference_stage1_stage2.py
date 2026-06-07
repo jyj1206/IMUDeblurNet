@@ -8,8 +8,10 @@ from tqdm import tqdm
 from datasets import build_stage1_stage2_loader
 from utils import (
     apply_dataset_overrides,
-    camera_matrix_from_config,
     load_eval_config,
+)
+from utils.utils_stage_pipeline import (
+    camera_matrix_from_config,
     load_stage1_stage2_models,
     resolve_device,
     run_stage1_stage2_batch,

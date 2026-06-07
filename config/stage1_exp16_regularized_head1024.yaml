@@ -1,9 +1,9 @@
-# Stage1 IAAI auxiliary experiment 12: exp01 with weaker auxiliary pose loss.
+# Stage1 experiment 16: exp01 with a wider gyro regression head.
 
 experiment:
-  name: stage1_iaai_exp12_regularized_aux002
+  name: stage1_exp16_regularized_head1024
   result_root: result
-  run_prefix: stage1_iaai_exp12_reg_aux002
+  run_prefix: stage1_exp16_reg_head1024
   output_dir: null
 dataset:
   root: data/IMUBlur
@@ -47,13 +47,13 @@ camera:
 time:
   default_dt: 0.004166666666666667
 model:
-  name: stage1_iaai_gyro
+  name: stage1
   args:
     backbone_weights: weights/segnext_iaai.pth
     decoder_weights: weights/segnext_iaai.pth
     freeze_backbone: false
     freeze_decoders: false
-    head_hidden: 512
+    head_hidden: 1024
     decoder_hidden: 128
     num_vectors: 7
     vector_dim: 3
@@ -64,7 +64,7 @@ model:
 loss:
   gyro_loss: smooth_l1
   aux_loss: smooth_l1
-  aux_weight: 0.02
+  aux_weight: 0.05
 train:
   epochs: 50
   resume: null

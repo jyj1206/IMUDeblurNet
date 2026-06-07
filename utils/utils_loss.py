@@ -71,7 +71,7 @@ def build_criterion(name):
 
 def timestamp_deltas(timestamp_window, default_dt=1.0 / 240.0):
     if timestamp_window is None:
-        raise ValueError("timestamp_window is required for IAAI auxiliary pose loss.")
+        raise ValueError("timestamp_window is required for Stage1 auxiliary pose loss.")
     timestamps = timestamp_window.float()
     dt = timestamps[:, 1:] - timestamps[:, :-1]
     median_dt = torch.nanmedian(dt.detach())
@@ -95,7 +95,7 @@ def gyro_window_to_integrated_omega(gyro_window, timestamp_window, default_dt=1.
     return theta / total_dt
 
 
-class IAAIGyroAuxLoss(nn.Module):
+class Stage1AuxLoss(nn.Module):
     def __init__(
         self,
         gyro_loss="smooth_l1",

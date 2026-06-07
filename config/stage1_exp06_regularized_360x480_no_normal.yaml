@@ -1,41 +1,64 @@
-# Stage1 experiment 04: regularized + 360x480 resize.
-# Listed for the /4-resolution plan; skip running until needed.
+# Stage1 experiment 06: regularized + 360x480 resize without ImageNet normalization.
 
 experiment:
-  name: stage1_exp06_regularized_360x480
+  name: stage1_exp06_regularized_360x480_no_normal
   result_root: result
-  run_prefix: stage1_exp06_reg_360x480
+  run_prefix: stage1_exp06_reg_360x480_no_norm
   output_dir: null
-
 dataset:
   root: data/IMUBlur
   split: train
   metadata_name: metadata.csv
-  batch_size: 8
+  batch_size: 4
   num_workers: 8
   drop_last: false
-
 validation:
   enabled: true
   split: val
-  batch_size: 8
+  batch_size: 4
   num_workers: 4
   interval: 1
   max_batches: null
-
 image:
   size:
     - 360
     - 480
   mean: null
   std: null
-
 target:
   name: gyro_window
   num_vectors: 7
   vector_dim: 3
   vector_start: 0
-
+camera:
+  native_size:
+    - 1080
+    - 1920
+  fx: 923.7181693
+  fy: 924.51235192
+  cx: 969.4457779
+  cy: 532.9090534
+time:
+  default_dt: 0.004166666666666667
+model:
+  name: stage1
+  args:
+    backbone_weights: weights/segnext_iaai.pth
+    decoder_weights: weights/segnext_iaai.pth
+    freeze_backbone: false
+    freeze_decoders: false
+    head_hidden: 512
+    decoder_hidden: 128
+    num_vectors: 7
+    vector_dim: 3
+    dropout: 0.2
+    use_aux_branch: true
+    pose_ridge: 0.0001
+    pose_max_points: 4096
+loss:
+  gyro_loss: smooth_l1
+  aux_loss: smooth_l1
+  aux_weight: 0.05
 train:
   epochs: 50
   resume: null
@@ -43,17 +66,6 @@ train:
   log_interval: 100
   checkpoint_interval: 5
   seed: 1234
-
-model:
-  name: stage1_gyro_estimation
-  args:
-    backbone_weights: weights/segnext_iaai.pth
-    freeze_backbone: false
-    head_hidden: 512
-    num_vectors: 7
-    vector_dim: 3
-    dropout: 0.2
-
 optimizer:
   name: adamw
   lr: 0.00005
@@ -61,14 +73,12 @@ optimizer:
     - 0.9
     - 0.999
   weight_decay: 0.0005
-
 scheduler:
   name: onecycle
   max_lr: 0.00005
   pct_start: 0.3
   div_factor: 25.0
   final_div_factor: 10000.0
-
 distributed:
   enabled: true
   backend: auto

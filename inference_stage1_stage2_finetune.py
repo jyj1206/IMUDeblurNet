@@ -7,9 +7,11 @@ from tqdm import tqdm
 
 from datasets.stage1_stage2_finetune_dataset import build_stage1_stage2_finetune_dataset
 from models.stage1_stage2_finetune_model import build_stage1_stage2_finetune_model
-from utils import camera_matrix_from_config, load_config, resolve_device
+from utils import load_config
 from utils.utils_eval import batch_meta_int_list, batch_meta_list, create_run_dir, safe_name, save_csv, save_json
+from utils.utils_eval_config import upgrade_stage1_config_names
 from utils.utils_metrics import sample_psnr, sample_ssim
+from utils.utils_stage_pipeline import camera_matrix_from_config, resolve_device
 from utils.utils_torch_load import torch_load_checkpoint
 from utils.utils_visualization import make_cmf_visualization, make_stage2_comparison, tensor_to_rgb_uint8, write_image
 
@@ -41,6 +43,7 @@ def _config_from_args(args, checkpoint):
     cfg = load_config(args.config) if args.config else checkpoint.get("config")
     if cfg is None:
         raise ValueError("Missing config. Pass --config or use a checkpoint saved by train_stage1_stage2_finetune.py.")
+    cfg = upgrade_stage1_config_names(cfg)
     if args.dataset_root:
         cfg.setdefault("dataset", {})["root"] = args.dataset_root
     if args.metadata_name:

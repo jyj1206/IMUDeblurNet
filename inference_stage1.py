@@ -6,8 +6,8 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from datasets.stage1_gyro_dataset import build_stage1_dataset
-from models.stage1_gyro_estimation_model import build_stage1_model
+from datasets.stage1_dataset import build_stage1_dataset
+from models.stage1_model import build_stage1_model
 from utils import apply_dataset_overrides, load_eval_config
 from utils.utils_eval import (
     batch_meta_int_list,
@@ -22,7 +22,7 @@ from utils.utils_visualization import make_stage1_gyro_visualization, write_imag
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Stage1 blur-to-gyro inference with gyro visualization.")
+    parser = argparse.ArgumentParser(description="Stage1 gyro inference with gyro visualization.")
     parser.add_argument("--config", default=None)
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--dataset-root", default=None)
@@ -79,7 +79,10 @@ def main():
     for batch in tqdm(loader, total=total_batches, desc="stage1 inference"):
         image = batch["image"].to(device, non_blocking=True).float()
         target_gyro = batch.get("gyro")
-        pred_gyro = model(image)["gyro"].detach().cpu()
+        focal_length = batch.get("focal_length")
+        if focal_length is not None:
+            focal_length = focal_length.to(device, non_blocking=True).float()
+        pred_gyro = model(image, focal_length=focal_length, return_aux=False)["gyro"].detach().cpu()
         batch_size = image.shape[0]
 
         stems = batch_meta_list(batch, "stem", batch_size, "sample")

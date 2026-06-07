@@ -6,14 +6,7 @@ from .modules.torch_camera_motion_field import make_camera_motion_field_torch
 
 
 def build_stage1_for_finetune(config):
-    model_cfg = config.get("model", {}) if isinstance(config, dict) else {}
-    name = str(model_cfg.get("name", "stage1_gyro_estimation")).lower()
-    if name == "stage1_iaai_gyro":
-        from .stage1_iaai_gyro_model import build_stage1_iaai_model
-
-        return build_stage1_iaai_model(config)
-
-    from .stage1_gyro_estimation_model import build_stage1_model
+    from .stage1_model import build_stage1_model
 
     return build_stage1_model(config)
 
@@ -42,10 +35,7 @@ class Stage1Stage2FinetuneNet(nn.Module):
             )
 
     def forward(self, stage1_image, blur, timestamp_window, crop_origin_yx=None):
-        try:
-            stage1_out = self.stage1(stage1_image, return_aux=False)
-        except TypeError:
-            stage1_out = self.stage1(stage1_image)
+        stage1_out = self.stage1(stage1_image, return_aux=False)
         pred_gyro = stage1_out["gyro"]
         cmf = make_camera_motion_field_torch(
             gyro_window=pred_gyro,
