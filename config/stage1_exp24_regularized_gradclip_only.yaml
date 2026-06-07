@@ -1,9 +1,9 @@
-# Stage1 experiment 01: regularized baseline.
+# Stage1 experiment 24: exp01 baseline with gradient clipping only.
 
 experiment:
-  name: stage1_exp01_regularized
+  name: stage1_exp24_regularized_gradclip_only
   result_root: result
-  run_prefix: stage1_exp01_reg
+  run_prefix: stage1_exp24_gradclip_only
   output_dir: null
 dataset:
   root: data/IMUBlur
@@ -65,6 +65,9 @@ loss:
   gyro_loss: smooth_l1
   aux_loss: smooth_l1
   aux_weight: 0.05
+  target_norm_weight: 0.0
+  target_norm_reference: 2.5
+  target_norm_max_weight: 2.0
 train:
   epochs: 50
   resume: null
