@@ -25,7 +25,7 @@ from utils.utils_torch_load import torch_load_checkpoint
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Stage1 gyro model.")
-    parser.add_argument("--config", default="config/stage1.yaml")
+    parser.add_argument("--config", default=None)
     parser.add_argument("--resume", default=None)
     return parser.parse_args()
 
@@ -246,9 +246,9 @@ def load_checkpoint(path, model, optimizer, scheduler, device):
 
 def main():
     args = parse_args()
-    config = load_config(args.config)
+    config = load_config(args.config or "config/stage1.yaml")
     resume = args.resume or config.get("train", {}).get("resume")
-    if resume and Path(resume).is_dir() and (Path(resume) / "config.yaml").exists():
+    if args.config is None and resume and Path(resume).is_dir() and (Path(resume) / "config.yaml").exists():
         config = load_config(Path(resume) / "config.yaml")
         config.setdefault("train", {})["resume"] = resume
     set_seed(config.get("train", {}).get("seed"))
