@@ -112,7 +112,7 @@ class Stage1Net(nn.Module):
         pose_ridge=1e-4,
         pose_max_points=4096,
         bgr255_input=True,
-        activation_clip=1e6,
+        activation_clip=None,
     ):
         super().__init__()
         self.use_aux_branch = bool(use_aux_branch)

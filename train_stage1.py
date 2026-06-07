@@ -105,6 +105,9 @@ def metrics_from_sums(metrics):
         "rmse": metrics["rmse_sum"] / count,
         "count": int(metrics["count"]),
     }
+    grad_count = max(1.0, metrics.get("grad_norm_count", 0.0))
+    if metrics.get("grad_norm_count", 0.0) > 0:
+        result["grad_norm"] = metrics.get("grad_norm_sum", 0.0) / grad_count
     for key, value in metrics.items():
         if key not in (
             "loss_sum",
@@ -113,6 +116,8 @@ def metrics_from_sums(metrics):
             "mae_sum",
             "rmse_sum",
             "count",
+            "grad_norm_sum",
+            "grad_norm_count",
         ):
             result[key] = int(value)
     return result
@@ -139,6 +144,10 @@ def empty_metrics():
         "target_nonfinite": 0.0,
         "pose_nonfinite": 0.0,
         "loss_nonfinite": 0.0,
+        "grad_norm_sum": 0.0,
+        "grad_norm_count": 0.0,
+        "grad_clipped": 0.0,
+        "grad_nonfinite": 0.0,
     }
 
 
@@ -265,6 +274,9 @@ def main():
         aux_loss=loss_cfg.get("aux_loss", "smooth_l1"),
         aux_weight=loss_cfg.get("aux_weight", 0.05),
         default_dt=config.get("time", {}).get("default_dt", 1.0 / 240.0),
+        target_norm_weight=loss_cfg.get("target_norm_weight", 0.0),
+        target_norm_reference=loss_cfg.get("target_norm_reference", 2.5),
+        target_norm_max_weight=loss_cfg.get("target_norm_max_weight", 3.0),
     ).to(device)
     optimizer = build_optimizer(config, model.parameters())
     epochs = int(config["train"].get("epochs", 50))
@@ -288,6 +300,8 @@ def main():
     log_interval = int(config["train"].get("log_interval", 100))
     checkpoint_interval = int(config["train"].get("checkpoint_interval", 5))
     val_interval = int(config.get("validation", {}).get("interval", 1))
+    grad_clip_norm = float(config["train"].get("grad_clip_norm", 0.0) or 0.0)
+    skip_nonfinite_loss = bool(config["train"].get("skip_nonfinite_loss", True))
     for epoch in range(start_epoch, epochs):
         if train_sampler:
             train_sampler.set_epoch(epoch)
@@ -306,20 +320,60 @@ def main():
             optimizer.zero_grad(set_to_none=True)
             outputs = model(image, focal_length=focal_length, return_aux=True)
             loss, loss_metrics, _ = criterion(outputs, target_gyro, timestamp_window)
+            batch_size = image.shape[0]
+
+            pred_gyro = outputs["gyro"]
+            pred_finite = torch.isfinite(pred_gyro).flatten(1).all(dim=1)
+            target_finite = torch.isfinite(target_gyro).flatten(1).all(dim=1)
+            running["pred_nonfinite"] += int((~pred_finite).sum().detach().cpu())
+            running["target_nonfinite"] += int((~target_finite).sum().detach().cpu())
+            if "pose" in outputs:
+                pose_finite = torch.isfinite(outputs["pose"]).flatten(1).all(dim=1)
+                running["pose_nonfinite"] += int((~pose_finite).sum().detach().cpu())
+
+            if not torch.isfinite(loss):
+                running["loss_nonfinite"] += batch_size
+                optimizer.zero_grad(set_to_none=True)
+                if skip_nonfinite_loss:
+                    if is_main_process() and (step % log_interval == 0 or step == len(train_loader)):
+                        metrics = metrics_from_sums(running)
+                        progress.set_postfix(loss=metrics["loss"], mae=metrics["mae"])
+                    continue
+
             loss.backward()
+            if grad_clip_norm > 0:
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(),
+                    max_norm=grad_clip_norm,
+                    error_if_nonfinite=False,
+                )
+                if torch.isfinite(grad_norm):
+                    grad_norm_value = float(grad_norm.detach().cpu())
+                    running["grad_norm_sum"] += grad_norm_value
+                    running["grad_norm_count"] += 1.0
+                    if grad_norm_value > grad_clip_norm:
+                        running["grad_clipped"] += 1.0
+                else:
+                    running["grad_nonfinite"] += batch_size
+                    optimizer.zero_grad(set_to_none=True)
+                    if skip_nonfinite_loss:
+                        continue
             optimizer.step()
             if scheduler is not None and scheduler_step == "iteration":
                 scheduler.step()
 
-            batch_size = image.shape[0]
-            if not torch.isfinite(loss):
-                running["loss_nonfinite"] += batch_size
             update_running(running, loss_metrics, batch_size)
 
             if is_main_process() and (step % log_interval == 0 or step == len(train_loader)):
                 metrics = metrics_from_sums(running)
                 lr = optimizer.param_groups[0]["lr"]
-                progress.set_postfix(loss=metrics["loss"], mae=metrics["mae"], aux=metrics["aux_loss"], lr=lr)
+                progress.set_postfix(
+                    loss=metrics["loss"],
+                    mae=metrics["mae"],
+                    aux=metrics["aux_loss"],
+                    lr=lr,
+                    grad=metrics.get("grad_norm", 0.0),
+                )
 
         if scheduler is not None and scheduler_step == "epoch":
             scheduler.step()

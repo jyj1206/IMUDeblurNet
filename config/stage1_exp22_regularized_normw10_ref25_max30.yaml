@@ -1,26 +1,28 @@
+# Stage1 experiment 22: aggressive high-motion weighted loss.
+
 experiment:
-  name: stage1
+  name: stage1_exp22_regularized_normw10_ref25_max30
   result_root: result
-  run_prefix: stage1
+  run_prefix: stage1_exp22_normw10
   output_dir: null
 dataset:
   root: data/IMUBlur
   split: train
   metadata_name: metadata.csv
-  batch_size: 4
+  batch_size: 8
   num_workers: 8
   drop_last: false
 validation:
   enabled: true
   split: val
-  batch_size: 4
-  num_workers: 8
+  batch_size: 8
+  num_workers: 4
   interval: 1
   max_batches: null
 image:
   size:
-    - 360
-    - 480
+    - 224
+    - 320
   mean:
     - 0.485
     - 0.456
@@ -63,7 +65,7 @@ loss:
   gyro_loss: smooth_l1
   aux_loss: smooth_l1
   aux_weight: 0.05
-  target_norm_weight: 0.0
+  target_norm_weight: 1.0
   target_norm_reference: 2.5
   target_norm_max_weight: 3.0
 train:
@@ -77,14 +79,14 @@ train:
   seed: 1234
 optimizer:
   name: adamw
-  lr: 5.0e-05
+  lr: 0.00005
   betas:
     - 0.9
     - 0.999
   weight_decay: 0.0005
 scheduler:
   name: onecycle
-  max_lr: 5.0e-05
+  max_lr: 0.00005
   pct_start: 0.3
   div_factor: 25.0
   final_div_factor: 10000.0

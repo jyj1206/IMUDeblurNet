@@ -93,7 +93,7 @@ class SpatialAttention(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, dim, mlp_ratio=4.0, drop=0.0, act_layer=nn.GELU, activation_clip=1e6):
+    def __init__(self, dim, mlp_ratio=4.0, drop=0.0, act_layer=nn.GELU, activation_clip=None):
         super().__init__()
         self.activation_clip = None if activation_clip is None else float(activation_clip)
         self.norm1 = nn.BatchNorm2d(dim)
@@ -160,7 +160,7 @@ class MSCAN(nn.Module):
         depths=None,
         drop_rate=0.0,
         bgr255_input=True,
-        activation_clip=1e6,
+        activation_clip=None,
     ):
         super().__init__()
         self.in_channels = int(in_channels)

@@ -102,25 +102,48 @@ class Stage1AuxLoss(nn.Module):
         aux_loss="smooth_l1",
         aux_weight=0.05,
         default_dt=1.0 / 240.0,
+        target_norm_weight=0.0,
+        target_norm_reference=2.5,
+        target_norm_max_weight=3.0,
     ):
         super().__init__()
         self.gyro_loss = str(gyro_loss).lower()
         self.aux_loss = str(aux_loss).lower()
         self.aux_weight = float(aux_weight)
         self.default_dt = float(default_dt)
+        self.target_norm_weight = float(target_norm_weight)
+        self.target_norm_reference = float(target_norm_reference)
+        self.target_norm_max_weight = float(target_norm_max_weight)
 
-    def _loss(self, pred, target, name):
+    def _elementwise_loss(self, pred, target, name):
         if name in ("smooth_l1", "huber"):
-            return F.smooth_l1_loss(pred, target)
+            return F.smooth_l1_loss(pred, target, reduction="none")
         if name in ("l1", "mae"):
-            return F.l1_loss(pred, target)
+            return F.l1_loss(pred, target, reduction="none")
         if name == "mse":
-            return F.mse_loss(pred, target)
+            return F.mse_loss(pred, target, reduction="none")
         raise ValueError(f"Unknown loss: {name}")
+
+    def _target_sample_weight(self, target_gyro):
+        if self.target_norm_weight <= 0 or self.target_norm_reference <= 0:
+            return None
+        norm = target_gyro.detach().norm(dim=-1).mean(dim=1)
+        extra = (norm / self.target_norm_reference - 1.0).clamp_min(0.0)
+        weight = 1.0 + self.target_norm_weight * extra
+        return weight.clamp_max(self.target_norm_max_weight)
+
+    def _loss(self, pred, target, name, sample_weight=None):
+        elementwise = self._elementwise_loss(pred, target, name)
+        per_sample = elementwise.flatten(1).mean(dim=1)
+        if sample_weight is None:
+            return per_sample.mean()
+        sample_weight = sample_weight.to(device=per_sample.device, dtype=per_sample.dtype)
+        return (per_sample * sample_weight).sum() / sample_weight.sum().clamp_min(1e-6)
 
     def forward(self, outputs, target_gyro, timestamp_window):
         pred_gyro = outputs["gyro"]
-        gyro_loss = self._loss(pred_gyro, target_gyro, self.gyro_loss)
+        sample_weight = self._target_sample_weight(target_gyro)
+        gyro_loss = self._loss(pred_gyro, target_gyro, self.gyro_loss, sample_weight=sample_weight)
         pred_pose = outputs.get("pose")
 
         if pred_pose is None or self.aux_weight <= 0:
@@ -132,7 +155,7 @@ class Stage1AuxLoss(nn.Module):
                 timestamp_window,
                 default_dt=self.default_dt,
             )
-            aux_loss = self._loss(pred_pose[:, :3], omega_gt, self.aux_loss)
+            aux_loss = self._loss(pred_pose[:, :3], omega_gt, self.aux_loss, sample_weight=sample_weight)
 
         total = gyro_loss + self.aux_weight * aux_loss
         mae = (pred_gyro - target_gyro).abs().mean()

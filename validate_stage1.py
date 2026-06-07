@@ -15,6 +15,7 @@ from utils.utils_eval import (
     batch_meta_list,
     create_run_dir,
     load_model_weights,
+    normalize_motion_type,
     safe_name,
     save_csv,
     save_json,
@@ -43,6 +44,100 @@ def resolve_device(name):
     if name == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(name)
+
+
+def _tensor_stats(values):
+    if not values:
+        return {"count": 0}
+    tensor = torch.cat([value.reshape(-1).float() for value in values], dim=0)
+    finite = torch.isfinite(tensor)
+    tensor = tensor[finite]
+    if tensor.numel() == 0:
+        return {"count": 0}
+    return {
+        "count": int(tensor.numel()),
+        "min": float(tensor.min().item()),
+        "max": float(tensor.max().item()),
+        "mean": float(tensor.mean().item()),
+        "std": float(tensor.std(unbiased=False).item()),
+        "p50": float(torch.quantile(tensor, 0.50).item()),
+        "p95": float(torch.quantile(tensor, 0.95).item()),
+        "p99": float(torch.quantile(tensor, 0.99).item()),
+    }
+
+
+def _axis_alignment(pred_values, target_values):
+    if not pred_values or not target_values:
+        return {"count": 0}
+    pred = torch.cat([value.reshape(-1, 3).float() for value in pred_values], dim=0)
+    target = torch.cat([value.reshape(-1, 3).float() for value in target_values], dim=0)
+    finite = torch.isfinite(pred).all(dim=1) & torch.isfinite(target).all(dim=1)
+    pred = pred[finite]
+    target = target[finite]
+    if pred.shape[0] < 2:
+        return {"count": int(pred.shape[0])}
+
+    pred_centered = pred - pred.mean(dim=0, keepdim=True)
+    target_centered = target - target.mean(dim=0, keepdim=True)
+    pred_std = pred_centered.std(dim=0, unbiased=False).clamp_min(1e-12)
+    target_std = target_centered.std(dim=0, unbiased=False).clamp_min(1e-12)
+    corr = (pred_centered[:, :, None] * target_centered[:, None, :]).mean(dim=0)
+    corr = corr / (pred_std[:, None] * target_std[None, :])
+
+    axes = ["x", "y", "z"]
+    best = []
+    for pred_axis in range(3):
+        target_axis = int(corr[pred_axis].abs().argmax().item())
+        value = float(corr[pred_axis, target_axis].item())
+        best.append(
+            {
+                "pred_axis": axes[pred_axis],
+                "target_axis": axes[target_axis],
+                "corr": value,
+                "sign": 1 if value >= 0 else -1,
+            }
+        )
+
+    return {
+        "count": int(pred.shape[0]),
+        "corr_pred_rows_target_cols": [
+            [float(corr[row, col].item()) for col in range(3)]
+            for row in range(3)
+        ],
+        "best_match_per_pred_axis": best,
+    }
+
+
+def _diagnostics(records):
+    groups = {}
+    scenes = {}
+    for record in records:
+        group = normalize_motion_type(record["type"])
+        groups.setdefault(group, {"pred": [], "target": [], "target_norm": [], "pred_norm": []})
+        groups[group]["pred"].append(record["pred"])
+        groups[group]["target"].append(record["target"])
+        groups[group]["target_norm"].append(record["target"].norm(dim=-1))
+        groups[group]["pred_norm"].append(record["pred"].norm(dim=-1))
+
+        scene = record.get("scene_dir") or "unknown"
+        scenes.setdefault(scene, {"type": group, "target_norm": []})
+        scenes[scene]["target_norm"].append(record["target"].norm(dim=-1))
+
+    by_type = {}
+    for group, values in sorted(groups.items()):
+        by_type[group] = {
+            "target_norm": _tensor_stats(values["target_norm"]),
+            "pred_norm": _tensor_stats(values["pred_norm"]),
+            "axis_alignment": _axis_alignment(values["pred"], values["target"]),
+        }
+
+    by_scene = {}
+    for scene, values in sorted(scenes.items()):
+        by_scene[scene] = {
+            "type": values["type"],
+            "target_norm": _tensor_stats(values["target_norm"]),
+        }
+    return {"by_type": by_type, "by_scene": by_scene}
 
 
 @torch.no_grad()
@@ -78,6 +173,9 @@ def main():
         aux_loss=loss_cfg.get("aux_loss", "smooth_l1"),
         aux_weight=loss_cfg.get("aux_weight", 0.05),
         default_dt=cfg.get("time", {}).get("default_dt", 1.0 / 240.0),
+        target_norm_weight=loss_cfg.get("target_norm_weight", 0.0),
+        target_norm_reference=loss_cfg.get("target_norm_reference", 2.5),
+        target_norm_max_weight=loss_cfg.get("target_norm_max_weight", 3.0),
     )
     image_cfg = cfg.get("image", {})
 
@@ -85,6 +183,7 @@ def main():
     overall = MetricAverager(metric_names)
     by_type = GroupedMetricAverager(metric_names)
     sample_rows = []
+    diagnostic_records = []
     saved = 0
 
     max_batches = args.max_batches
@@ -106,7 +205,7 @@ def main():
         _, loss_metrics, omega_gt = criterion(outputs, target_gyro, timestamp_window)
         pred_gyro = outputs["gyro"]
         pose = outputs.get("pose")
-        if pose is not None:
+        if pose is not None and omega_gt is not None:
             pose_omega_mae = (pose[:, :3] - omega_gt).abs().flatten(1).mean(dim=1)
         else:
             pose_omega_mae = torch.zeros(image.shape[0], device=device)
@@ -116,7 +215,10 @@ def main():
         batch_size = image.shape[0]
         stems = batch_meta_list(batch, "stem", batch_size, "sample")
         types = batch_meta_list(batch, "type", batch_size, "unknown")
+        scenes = batch_meta_list(batch, "scene_dir", batch_size, "unknown")
         indices = batch_meta_int_list(batch, "index", batch_size, 0)
+        target_norm = target_gyro.norm(dim=-1).mean(dim=1)
+        pred_norm = pred_gyro.norm(dim=-1).mean(dim=1)
 
         for idx in range(batch_size):
             metrics = {
@@ -132,10 +234,21 @@ def main():
             row = {
                 "index": indices[idx],
                 "type": types[idx],
+                "scene_dir": scenes[idx],
                 "stem": stems[idx],
+                "target_gyro_norm": f"{float(target_norm[idx].detach().cpu()):.8f}",
+                "pred_gyro_norm": f"{float(pred_norm[idx].detach().cpu()):.8f}",
                 **{key: f"{value:.8f}" for key, value in metrics.items()},
             }
             sample_rows.append(row)
+            diagnostic_records.append(
+                {
+                    "type": types[idx],
+                    "scene_dir": scenes[idx],
+                    "pred": pred_gyro[idx].detach().cpu(),
+                    "target": target_gyro[idx].detach().cpu(),
+                }
+            )
 
             if args.save_limit is None or saved < int(args.save_limit):
                 name = safe_name(f"{indices[idx]:06d}", types[idx], stems[idx])
@@ -164,9 +277,14 @@ def main():
         "max_batches": max_batches,
         "load_report": load_report,
         "saved_visuals": saved,
+        "diagnostics": _diagnostics(diagnostic_records),
     }
     save_json(run_dir / "metrics.json", metrics)
-    save_csv(run_dir / "samples.csv", sample_rows, ["index", "type", "stem", *metric_names])
+    save_csv(
+        run_dir / "samples.csv",
+        sample_rows,
+        ["index", "type", "scene_dir", "stem", "target_gyro_norm", "pred_gyro_norm", *metric_names],
+    )
     print(f"saved: {run_dir}")
     print(metrics["overall"])
     print(metrics["by_type"])
