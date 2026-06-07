@@ -47,6 +47,25 @@ def new_run_dir(config, resume=None):
     return run_dir
 
 
+def resolve_resume_checkpoint(resume):
+    if not resume:
+        return None
+    resume_path = Path(resume)
+    if resume_path.is_dir():
+        candidates = [
+            resume_path / "checkpoints" / "latest.pt",
+            resume_path / "checkpoints" / "last.pt",
+            resume_path / "last.pt",
+        ]
+        for path in candidates:
+            if path.exists():
+                return path
+        raise FileNotFoundError(f"Missing checkpoint under resume directory: {candidates[0]}")
+    if resume_path.is_file():
+        return resume_path
+    raise FileNotFoundError(f"resume must be a .pt file or run directory: {resume}")
+
+
 def build_optimizer(config, parameters):
     optim_cfg = config.get("optimizer", {})
     name = optim_cfg.get("name", "adamw").lower()
@@ -232,6 +251,7 @@ def main():
 
     device, distributed = init_distributed(config.get("distributed", {}))
     resume = args.resume or config.get("train", {}).get("resume")
+    resume_checkpoint = resolve_resume_checkpoint(resume)
     run_dir = new_run_dir(config, resume=resume)
     if is_main_process():
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -285,12 +305,12 @@ def main():
     start_epoch = 0
     best_val_loss = float("inf")
     history = []
-    if resume:
-        checkpoint = load_checkpoint(resume, model, optimizer, scheduler, device)
+    if resume_checkpoint:
+        checkpoint = load_checkpoint(resume_checkpoint, model, optimizer, scheduler, device)
         start_epoch = int(checkpoint.get("epoch", -1)) + 1
         best_val_loss = float(checkpoint.get("best_val_loss", best_val_loss))
         history = list(checkpoint.get("history", []))
-        logger.info(f"resumed_from={resume}, start_epoch={start_epoch}")
+        logger.info(f"resumed_from={resume_checkpoint}, start_epoch={start_epoch}")
 
     logger.info(
         f"train_samples={len(train_dataset)}, steps_per_epoch={len(train_loader)}, "
