@@ -1,0 +1,95 @@
+# Stage1 experiment 28: exp24 with tighter gradient clipping.
+
+experiment:
+  name: stage1_exp28_exp24_gradclip05
+  result_root: result
+  run_prefix: stage1_exp28_gradclip05
+  output_dir: null
+dataset:
+  root: data/IMUBlur
+  split: train
+  metadata_name: metadata.csv
+  batch_size: 8
+  num_workers: 8
+  drop_last: false
+validation:
+  enabled: true
+  split: val
+  batch_size: 8
+  num_workers: 4
+  interval: 1
+  max_batches: null
+image:
+  size:
+    - 224
+    - 320
+  mean:
+    - 0.485
+    - 0.456
+    - 0.406
+  std:
+    - 0.229
+    - 0.224
+    - 0.225
+target:
+  name: gyro_window
+  num_vectors: 7
+  vector_dim: 3
+  vector_start: 0
+camera:
+  native_size:
+    - 1080
+    - 1920
+  fx: 923.7181693
+  fy: 924.51235192
+  cx: 969.4457779
+  cy: 532.9090534
+time:
+  default_dt: 0.004166666666666667
+model:
+  name: stage1
+  args:
+    backbone_weights: weights/segnext_iaai.pth
+    decoder_weights: weights/segnext_iaai.pth
+    freeze_backbone: false
+    freeze_decoders: false
+    head_hidden: 512
+    decoder_hidden: 128
+    num_vectors: 7
+    vector_dim: 3
+    dropout: 0.2
+    use_aux_branch: true
+    pose_ridge: 0.0001
+    pose_max_points: 4096
+loss:
+  gyro_loss: smooth_l1
+  aux_loss: smooth_l1
+  aux_weight: 0.05
+  target_norm_weight: 0.0
+  target_norm_reference: 2.5
+  target_norm_max_weight: 2.0
+train:
+  epochs: 50
+  resume: null
+  loss: smooth_l1
+  grad_clip_norm: 0.5
+  skip_nonfinite_loss: true
+  log_interval: 100
+  checkpoint_interval: 5
+  seed: 1234
+optimizer:
+  name: adamw
+  lr: 0.00005
+  betas:
+    - 0.9
+    - 0.999
+  weight_decay: 0.0005
+scheduler:
+  name: onecycle
+  max_lr: 0.00005
+  pct_start: 0.3
+  div_factor: 25.0
+  final_div_factor: 10000.0
+distributed:
+  enabled: true
+  backend: auto
