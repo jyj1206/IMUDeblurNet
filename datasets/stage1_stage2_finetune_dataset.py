@@ -323,8 +323,11 @@ def build_stage1_stage2_finetune_loader(
     dataset_cfg = config["dataset"]
     val_cfg = config.get("validation", {})
     loader_cfg = dataset_cfg if is_train else {**dataset_cfg, **val_cfg}
+    dataset_config = config
+    if not is_train:
+        dataset_config = {**config, "dataset": loader_cfg}
     dataset = build_stage1_stage2_finetune_dataset(
-        config,
+        dataset_config,
         stage1_config,
         split=split or loader_cfg.get("split"),
         is_train=is_train,

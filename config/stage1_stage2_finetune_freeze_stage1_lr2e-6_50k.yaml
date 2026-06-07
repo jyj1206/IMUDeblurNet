@@ -1,10 +1,10 @@
-# End-to-end fine-tuning ablation: freeze Stage1, train Stage2 only.
-# Blur -> frozen Stage1 gyro -> differentiable CMF -> trainable Stage2 sharp.
+# Stage1 frozen, Stage2-only fine-tuning with lower LR.
+# Use this if the 5e-6 run improves early but oscillates or saturates.
 
 experiment:
-  name: stage1_stage2_finetune_freeze_stage1
+  name: stage1_stage2_finetune_freeze_stage1_lr2e-6_50k
   result_root: result
-  run_prefix: stage1_stage2_ft_freeze_stage1
+  run_prefix: stage1_stage2_ft_freeze_stage1_lr2e-6_50k
   output_dir: null
 
 dataset:
@@ -43,7 +43,7 @@ stage2:
   config: null
   strict: true
   freeze: false
-  lr: 0.000005
+  lr: 0.000002
 
 camera:
   native_size:
@@ -80,7 +80,7 @@ train:
 
 optimizer:
   name: adamw
-  lr: 0.00001
+  lr: 0.000002
   betas:
     - 0.9
     - 0.999
@@ -89,7 +89,7 @@ optimizer:
 scheduler:
   name: cosine
   t_max: null
-  eta_min: 0.0000001
+  eta_min: 0.00000005
 
 distributed:
   enabled: true

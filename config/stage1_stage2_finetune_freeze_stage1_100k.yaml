@@ -1,10 +1,10 @@
-# End-to-end fine-tuning ablation: freeze Stage1, train Stage2 only.
-# Blur -> frozen Stage1 gyro -> differentiable CMF -> trainable Stage2 sharp.
+# Stage1 frozen, Stage2-only fine-tuning with longer cosine schedule.
+# Use this to check whether the 50k plateau was just too short.
 
 experiment:
-  name: stage1_stage2_finetune_freeze_stage1
+  name: stage1_stage2_finetune_freeze_stage1_100k
   result_root: result
-  run_prefix: stage1_stage2_ft_freeze_stage1
+  run_prefix: stage1_stage2_ft_freeze_stage1_100k
   output_dir: null
 
 dataset:
@@ -27,7 +27,7 @@ validation:
   split: val
   batch_size: 1
   num_workers: 2
-  interval: 1000
+  interval: 2000
   max_batches: null
   load_target_cmf: false
 
@@ -68,19 +68,19 @@ loss:
   smooth_weight: 0.0
 
 train:
-  iterations: 50000
+  iterations: 100000
   epochs: null
   resume: null
   loss: psnr
   log_interval: 100
-  checkpoint_interval: 1000
+  checkpoint_interval: 2000
   grad_clip_norm: 1.0
   freeze_unused_stage1_aux: true
   seed: 1234
 
 optimizer:
   name: adamw
-  lr: 0.00001
+  lr: 0.000005
   betas:
     - 0.9
     - 0.999
