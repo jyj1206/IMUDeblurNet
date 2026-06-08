@@ -1,3 +1,6 @@
+from contextlib import contextmanager
+import warnings
+
 import torch
 
 
@@ -37,31 +40,32 @@ class Stage2IqaMetrics:
         self.lpips_model = None
         self.pyiqa_models = {}
 
-        if "lpips" in self.metric_names:
-            try:
-                import lpips
-            except ImportError as exc:
-                raise ImportError(
-                    "LPIPS metric needs the 'lpips' package. "
-                    "Install it with: pip install lpips"
-                ) from exc
-            self.lpips_model = lpips.LPIPS(net="alex").to(device).eval()
+        with _quiet_iqa_library_warnings():
+            if "lpips" in self.metric_names:
+                try:
+                    import lpips
+                except ImportError as exc:
+                    raise ImportError(
+                        "LPIPS metric needs the 'lpips' package. "
+                        "Install it with: pip install lpips"
+                    ) from exc
+                self.lpips_model = lpips.LPIPS(net="alex").to(device).eval()
 
-        pyiqa_names = [name for name in self.metric_names if name in {"niqe", "topiq_fr", "topiq_nr"}]
-        if pyiqa_names:
-            try:
-                import pyiqa
-            except ImportError as exc:
-                raise ImportError(
-                    "NIQE/TOPIQ metrics need the 'pyiqa' package. "
-                    "Install it with: pip install pyiqa"
-                ) from exc
-            for name in pyiqa_names:
-                self.pyiqa_models[name] = pyiqa.create_metric(
-                    name,
-                    device=device,
-                    as_loss=False,
-                )
+            pyiqa_names = [name for name in self.metric_names if name in {"niqe", "topiq_fr", "topiq_nr"}]
+            if pyiqa_names:
+                try:
+                    import pyiqa
+                except ImportError as exc:
+                    raise ImportError(
+                        "NIQE/TOPIQ metrics need the 'pyiqa' package. "
+                        "Install it with: pip install pyiqa"
+                    ) from exc
+                for name in pyiqa_names:
+                    self.pyiqa_models[name] = pyiqa.create_metric(
+                        name,
+                        device=device,
+                        as_loss=False,
+                    )
 
     @torch.no_grad()
     def __call__(self, pred, target=None):
@@ -107,3 +111,29 @@ def _as_batch_values(value, batch_size):
         f"Metric output cannot be mapped to batch values: "
         f"shape={tuple(value.shape)}, batch_size={batch_size}"
     )
+
+
+@contextmanager
+def _quiet_iqa_library_warnings():
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"The parameter 'pretrained' is deprecated.*",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Arguments other than a weight enum or `None` for 'weights' are deprecated.*",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"pkg_resources is deprecated as an API.*",
+            category=UserWarning,
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Importing from timm\.models\.layers is deprecated.*",
+            category=FutureWarning,
+        )
+        yield

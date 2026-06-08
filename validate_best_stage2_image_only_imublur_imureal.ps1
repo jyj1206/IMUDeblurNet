@@ -3,13 +3,17 @@ param(
     [string]$Stage2Config = "config\stage2_image_only.yaml",
     [string]$IMUBlurRoot = "data\IMUBlur",
     [string]$IMURealRoot = "data\IMURealBlur",
+    [string]$GoProRoot = "data\GoPro",
+    [string]$RealBlurJRoot = "data\RealBlur_J",
     [string]$Split = "test",
     [string]$OutputRoot = "runs",
     [int]$BatchSize = 1,
     [int]$NumWorkers = 0,
     [int]$MaxBatches = -1,
     [int]$SaveLimit = -1,
-    [switch]$NonStrict
+    [switch]$NonStrict,
+    [switch]$RealBlurJMetrics,
+    [switch]$AllowMissingRealBlurJ
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,3 +47,19 @@ python validate_stage2.py @commonArgs `
     --dataset-root $IMURealRoot `
     --allow-missing-gt `
     --realblur-metrics
+
+Write-Host "== Stage2 image-only | GoPro | $Split =="
+python validate_stage2.py @commonArgs `
+    --dataset-root $GoProRoot
+
+$realBlurJArgs = @($commonArgs)
+if ($RealBlurJMetrics) {
+    $realBlurJArgs += "--realblur-metrics"
+}
+if ($AllowMissingRealBlurJ) {
+    $realBlurJArgs += "--allow-missing-gt"
+}
+
+Write-Host "== Stage2 image-only | RealBlur_J | $Split =="
+python validate_stage2.py @realBlurJArgs `
+    --dataset-root $RealBlurJRoot

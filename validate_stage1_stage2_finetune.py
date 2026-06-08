@@ -307,19 +307,20 @@ def main():
                 saved += 1
             rows.append(row)
 
-    fieldnames = [
+    fieldnames = list(dict.fromkeys([
         "index",
         "type",
         "stem",
         *metric_names,
         "cmf_mae",
         "cmf_rmse",
+        "cmf_epe",
         "gyro_visual_path",
         "cmf_visual_path",
         "cmf_compare_visual_path",
         "stage2_visual_path",
         "output_path",
-    ]
+    ]))
     metrics = {
         "overall": overall.as_dict(),
         "by_type": by_type.as_dict(),
