@@ -122,8 +122,8 @@ weights/
 
 The dataset and checkpoint files can be downloaded from Google Drive.
 
-- **IMUBlur / IMURealBlur datasets**: [Google Drive](GOOGLE_DRIVE_DATASET_LINK)
-- **Pretrained weights**: [Google Drive](GOOGLE_DRIVE_WEIGHTS_LINK)
+- **IMUBlur / IMURealBlur datasets**: [Google Drive](https://drive.google.com/drive/folders/1Ttp6ytm7rvdYyj3hU1uZvi82c9a2f-hZ)
+- **Pretrained weights**: [Google Drive](https://drive.google.com/drive/folders/14-4GSpS8fip-zLHqwzkYziXM22RQbeRi)
 
 
 ## Quick Start: Reproducibility Check
