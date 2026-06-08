@@ -1,22 +1,23 @@
-# Stage1 experiment 25: exp24 with stronger regularization for overfitting control.
+# Stage1 V2 ablation: auxiliary branch active, flow/depth decoders frozen.
 
 experiment:
-  name: stage1_exp25_exp24_stronger_regularization
+  name: stage1_v2_freeze_aux_decoders
   result_root: result
-  run_prefix: stage1_exp25_stronger_reg
+  run_prefix: stage1_v2_freeze_aux_decoders
   output_dir: null
 dataset:
-  root: data/IMUBlur
+  root: data/IMUBlurV2
   split: train
   metadata_name: metadata.csv
-  batch_size: 8
-  num_workers: 8
+  # Per-GPU batch. With 8 GPUs this gives effective_batch=16.
+  batch_size: 2
+  num_workers: 2
   drop_last: false
 validation:
   enabled: true
   split: val
   batch_size: 8
-  num_workers: 4
+  num_workers: 2
   interval: 1
   max_batches: null
 image:
@@ -52,12 +53,12 @@ model:
     backbone_weights: weights/segnext_iaai.pth
     decoder_weights: weights/segnext_iaai.pth
     freeze_backbone: false
-    freeze_decoders: false
+    freeze_decoders: true
     head_hidden: 512
     decoder_hidden: 128
     num_vectors: 7
     vector_dim: 3
-    dropout: 0.35
+    dropout: 0.2
     use_aux_branch: true
     pose_ridge: 0.0001
     pose_max_points: 4096
@@ -83,7 +84,7 @@ optimizer:
   betas:
     - 0.9
     - 0.999
-  weight_decay: 0.001
+  weight_decay: 0.0005
 scheduler:
   name: onecycle
   max_lr: 0.00005

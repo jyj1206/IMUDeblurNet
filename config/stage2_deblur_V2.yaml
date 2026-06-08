@@ -1,10 +1,10 @@
-# Stage 2 deblurring training config.
+# Stage 2 deblurring training config for IMUBlurV2.
 # Values under model.args are passed to models/stage2_deblur_model.py::build_model.
 
 experiment:
-  name: stage2_deblur_training
+  name: stage2_deblur_v2_training
   result_root: result
-  run_prefix: stage2
+  run_prefix: stage2_v2
   output_dir: null
 
 dataset:
@@ -12,8 +12,8 @@ dataset:
   split: train
   metadata_name: metadata.csv
   patch_size: 256
-  batch_size: 8
-  num_workers: 16
+  batch_size: 4
+  num_workers: 4
 
   motion_field_root: null
   motion_field_dir: camera_motion_field
@@ -23,8 +23,8 @@ dataset:
 validation:
   enabled: true
   split: val
-  batch_size: 4
-  num_workers: 4
+  batch_size: 8
+  num_workers: 2
   interval: 5000
   max_batches: null
 

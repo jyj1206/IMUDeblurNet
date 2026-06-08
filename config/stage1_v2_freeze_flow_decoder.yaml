@@ -1,22 +1,23 @@
-# Stage1 experiment 24: exp01 baseline with gradient clipping only.
+# Stage1 V2 ablation: auxiliary branch active, flow decoder frozen only.
 
 experiment:
-  name: stage1_exp24_regularized_gradclip_only
+  name: stage1_v2_freeze_flow_decoder
   result_root: result
-  run_prefix: stage1_exp24_gradclip_only
+  run_prefix: stage1_v2_freeze_flow_decoder
   output_dir: null
 dataset:
-  root: data/IMUBlur
+  root: data/IMUBlurV2
   split: train
   metadata_name: metadata.csv
-  batch_size: 8
-  num_workers: 8
+  # Per-GPU batch. With 8 GPUs this gives effective_batch=16.
+  batch_size: 2
+  num_workers: 2
   drop_last: false
 validation:
   enabled: true
   split: val
   batch_size: 8
-  num_workers: 4
+  num_workers: 2
   interval: 1
   max_batches: null
 image:
@@ -53,6 +54,8 @@ model:
     decoder_weights: weights/segnext_iaai.pth
     freeze_backbone: false
     freeze_decoders: false
+    freeze_flow_decoder: true
+    freeze_depth_decoder: false
     head_hidden: 512
     decoder_hidden: 128
     num_vectors: 7

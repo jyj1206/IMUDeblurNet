@@ -1,0 +1,61 @@
+==================================================
+CAMERA CALIBRATION PARAMETERS REPORT
+==================================================
+Target Directory : data\checkerboard_image
+Image Dimensions : 1920 x 1080 (W x H)
+Checkerboard     : 8 x 6 inner corners
+Square Size      : 1.0
+Used Images Count: 22 frames
+Skipped Count    : 0 frames
+==================================================
+
+--- [METHOD 1] STANDARD CAMERA MODEL ---
+Re-projection Error (RMS): 0.450386 pixels
+
+Camera Matrix (K):
+[[924.84849705,   0.        , 969.38431443],
+ [  0.        , 925.6595751 , 532.817896  ],
+ [  0.        ,   0.        ,   1.        ]]
+
+Distortion Coefficients ([k1, k2, p1, p2, k3, ...]):
+[-2.78410270e-01,  1.28821649e-01,  4.14048416e-04, -2.31541775e-04,
+ -3.59392973e-02]
+
+==================================================
+
+--- [METHOD 2] FISHEYE CAMERA MODEL ---
+Re-projection Error (RMS): 0.448391 pixels
+
+Camera Matrix (K):
+[[923.71815784,   0.        , 969.44576688],
+ [  0.        , 924.51234264, 532.9090653 ],
+ [  0.        ,   0.        ,   1.        ]]
+
+Distortion Coefficients ([k1, k2, k3, k4]):
+[ 0.08288316, -0.20698349,  0.52719077, -0.39585622]
+
+==================================================
+
+Used Images:
+- frame_0001.jpg
+- frame_0002.jpg
+- frame_0003.jpg
+- frame_0004.jpg
+- frame_0005.jpg
+- frame_0006.jpg
+- frame_0008.jpg
+- frame_0009.jpg
+- frame_0010.jpg
+- frame_0011.jpg
+- frame_0012.jpg
+- frame_0013.jpg
+- frame_0014.jpg
+- frame_0015.jpg
+- frame_0016.jpg
+- frame_0017.jpg
+- frame_0019.jpg
+- frame_0020.jpg
+- frame_0021.jpg
+- frame_0022.jpg
+- frame_0023.jpg
+- frame_0024.jpg

@@ -1,22 +1,23 @@
-# Stage1 experiment 26: exp24 with a smaller gyro head and stronger dropout.
+# Stage1 V2 baseline: exp24 settings on IMUBlurV2.
 
 experiment:
-  name: stage1_exp26_exp24_small_head_dropout030
+  name: stage1_v2_baseline
   result_root: result
-  run_prefix: stage1_exp26_small_head_do030
+  run_prefix: stage1_v2_baseline
   output_dir: null
 dataset:
-  root: data/IMUBlur
+  root: data/IMUBlurV2
   split: train
   metadata_name: metadata.csv
-  batch_size: 8
-  num_workers: 8
+  # Per-GPU batch. With 8 GPUs this gives effective_batch=16.
+  batch_size: 2
+  num_workers: 2
   drop_last: false
 validation:
   enabled: true
   split: val
   batch_size: 8
-  num_workers: 4
+  num_workers: 2
   interval: 1
   max_batches: null
 image:
@@ -53,11 +54,11 @@ model:
     decoder_weights: weights/segnext_iaai.pth
     freeze_backbone: false
     freeze_decoders: false
-    head_hidden: 256
+    head_hidden: 512
     decoder_hidden: 128
     num_vectors: 7
     vector_dim: 3
-    dropout: 0.3
+    dropout: 0.2
     use_aux_branch: true
     pose_ridge: 0.0001
     pose_max_points: 4096

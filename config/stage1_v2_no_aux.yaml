@@ -1,28 +1,29 @@
-# Stage1 experiment 03: regularized + 540x960 resize.
+# Stage1 V2 ablation: gyro head only, no auxiliary pose branch.
 
 experiment:
-  name: stage1_exp03_regularized_540x960
+  name: stage1_v2_no_aux
   result_root: result
-  run_prefix: stage1_exp03_reg_540x960
+  run_prefix: stage1_v2_no_aux
   output_dir: null
 dataset:
-  root: data/IMUBlur
+  root: data/IMUBlurV2
   split: train
   metadata_name: metadata.csv
+  # Per-GPU batch. With 8 GPUs this gives effective_batch=16.
   batch_size: 2
-  num_workers: 8
+  num_workers: 2
   drop_last: false
 validation:
   enabled: true
   split: val
-  batch_size: 2
-  num_workers: 4
+  batch_size: 8
+  num_workers: 2
   interval: 1
   max_batches: null
 image:
   size:
-    - 540
-    - 960
+    - 224
+    - 320
   mean:
     - 0.485
     - 0.456
@@ -58,17 +59,22 @@ model:
     num_vectors: 7
     vector_dim: 3
     dropout: 0.2
-    use_aux_branch: true
+    use_aux_branch: false
     pose_ridge: 0.0001
     pose_max_points: 4096
 loss:
   gyro_loss: smooth_l1
   aux_loss: smooth_l1
-  aux_weight: 0.05
+  aux_weight: 0.0
+  target_norm_weight: 0.0
+  target_norm_reference: 2.5
+  target_norm_max_weight: 2.0
 train:
   epochs: 50
   resume: null
   loss: smooth_l1
+  grad_clip_norm: 1.0
+  skip_nonfinite_loss: true
   log_interval: 100
   checkpoint_interval: 5
   seed: 1234
