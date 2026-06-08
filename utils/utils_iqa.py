@@ -51,7 +51,11 @@ class Stage2IqaMetrics:
                     ) from exc
                 self.lpips_model = lpips.LPIPS(net="alex").to(device).eval()
 
-            pyiqa_names = [name for name in self.metric_names if name in {"niqe", "topiq_fr", "topiq_nr"}]
+            pyiqa_names = [
+                name
+                for name in self.metric_names
+                if name in {"niqe", "topiq_fr", "topiq_nr"}
+            ]
             if pyiqa_names:
                 try:
                     import pyiqa

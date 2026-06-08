@@ -1,6 +1,3 @@
-# Stage1-only fine-tuning with Stage2 frozen and stronger gyro/CMF guidance.
-# Patch size stays at 256; this tests whether improving CMF quality alone helps the frozen deblurrer.
-
 experiment:
   name: stage1_stage2_finetune_freeze_stage2_stage1_cmf_guided_lr5e-6_50k
   result_root: result

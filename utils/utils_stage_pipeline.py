@@ -52,7 +52,11 @@ def load_stage1_stage2_models(
         device=device,
         strict=strict_stage2,
     )
-    return stage1_model, stage2_model, {"stage1": stage1_report, "stage2": stage2_report}
+    return (
+        stage1_model,
+        stage2_model,
+        {"stage1": stage1_report, "stage2": stage2_report},
+    )
 
 
 def predicted_gyro_to_cmf(
@@ -106,7 +110,9 @@ def run_stage1_stage2_batch(
     if focal_length is not None:
         focal_length = focal_length.to(device, non_blocking=True).float()
 
-    stage1_out = stage1_model(stage1_image, focal_length=focal_length, return_aux=return_aux)
+    stage1_out = stage1_model(
+        stage1_image, focal_length=focal_length, return_aux=return_aux
+    )
     pred_gyro = stage1_out["gyro"]
     cmf = predicted_gyro_to_cmf(
         pred_gyro,

@@ -12,29 +12,38 @@ WORKER_ARGS = None
 WORKER_CENTER_VECTOR_CACHE = None
 WORKER_SCENE_CACHE = None
 
-DEFAULT_CAMERA_K = np.array([
-    [923.7181693, 0.0, 969.4457779],
-    [0.0, 924.51235192, 532.9090534],
-    [0.0, 0.0, 1.0],
-], dtype=np.float64)
+DEFAULT_CAMERA_K = np.array(
+    [
+        [923.7181693, 0.0, 969.4457779],
+        [0.0, 924.51235192, 532.9090534],
+        [0.0, 0.0, 1.0],
+    ],
+    dtype=np.float64,
+)
 
 
 def compute_rotation_matrix(ang_vel_x, ang_vel_y, ang_vel_z):
-    r_x = np.array([
-        [1, 0, 0],
-        [0, np.cos(-ang_vel_x), -np.sin(-ang_vel_x)],
-        [0, np.sin(-ang_vel_x), np.cos(-ang_vel_x)],
-    ])
-    r_y = np.array([
-        [np.cos(-ang_vel_y), 0, np.sin(-ang_vel_y)],
-        [0, 1, 0],
-        [-np.sin(-ang_vel_y), 0, np.cos(-ang_vel_y)],
-    ])
-    r_z = np.array([
-        [np.cos(ang_vel_z), np.sin(ang_vel_z), 0],
-        [-np.sin(ang_vel_z), np.cos(ang_vel_z), 0],
-        [0, 0, 1],
-    ])
+    r_x = np.array(
+        [
+            [1, 0, 0],
+            [0, np.cos(-ang_vel_x), -np.sin(-ang_vel_x)],
+            [0, np.sin(-ang_vel_x), np.cos(-ang_vel_x)],
+        ]
+    )
+    r_y = np.array(
+        [
+            [np.cos(-ang_vel_y), 0, np.sin(-ang_vel_y)],
+            [0, 1, 0],
+            [-np.sin(-ang_vel_y), 0, np.cos(-ang_vel_y)],
+        ]
+    )
+    r_z = np.array(
+        [
+            [np.cos(ang_vel_z), np.sin(ang_vel_z), 0],
+            [-np.sin(ang_vel_z), np.cos(ang_vel_z), 0],
+            [0, 0, 1],
+        ]
+    )
     return r_x @ r_y @ r_z
 
 
@@ -61,7 +70,11 @@ def camera_matrix_from_args(args):
 
 
 def compute_homography(r, camera_matrix=None):
-    k = DEFAULT_CAMERA_K if camera_matrix is None else np.asarray(camera_matrix, dtype=np.float64)
+    k = (
+        DEFAULT_CAMERA_K
+        if camera_matrix is None
+        else np.asarray(camera_matrix, dtype=np.float64)
+    )
     return k @ r @ np.linalg.inv(k)
 
 
@@ -116,21 +129,31 @@ def make_camera_motion_field(
     h_pre_list = []
     for idx in range((len(r_list) // 2) - 1, -1, -1):
         r = r @ r_list[idx]
-        h_pre_list.append(np.linalg.inv(compute_homography(r, camera_matrix=camera_matrix)))
+        h_pre_list.append(
+            np.linalg.inv(compute_homography(r, camera_matrix=camera_matrix))
+        )
 
     cmf_pro = None
     for h_pro in h_pro_list:
         end_vectors = np.einsum("ij,klj->kli", h_pro, center_vectors)
         end_vectors = end_vectors / end_vectors[:, :, -1, np.newaxis]
         vector = end_vectors[:, :, :2] - center_vectors[:, :, :2]
-        cmf_pro = vector.copy() if cmf_pro is None else np.concatenate((cmf_pro, vector), axis=2)
+        cmf_pro = (
+            vector.copy()
+            if cmf_pro is None
+            else np.concatenate((cmf_pro, vector), axis=2)
+        )
 
     cmf_pre = None
     for h_pre in h_pre_list:
         initial_vectors = np.einsum("ij,klj->kli", h_pre, center_vectors)
         initial_vectors = initial_vectors / initial_vectors[:, :, -1, np.newaxis]
         vector = initial_vectors[:, :, :2] - center_vectors[:, :, :2]
-        cmf_pre = vector.copy() if cmf_pre is None else np.concatenate((vector, cmf_pre), axis=2)
+        cmf_pre = (
+            vector.copy()
+            if cmf_pre is None
+            else np.concatenate((vector, cmf_pre), axis=2)
+        )
 
     cmf = np.concatenate((cmf_pre, cmf_pro), axis=2)
 
@@ -145,7 +168,13 @@ def make_camera_motion_field(
 
 
 def output_path(save_root_dir, mode, scene_dir, blur_path, save_format):
-    return save_root_dir / mode / "camera_motion_field" / scene_dir / f"{Path(blur_path).stem}.{save_format}"
+    return (
+        save_root_dir
+        / mode
+        / "camera_motion_field"
+        / scene_dir
+        / f"{Path(blur_path).stem}.{save_format}"
+    )
 
 
 def row_blur_path(row):
@@ -172,7 +201,9 @@ def save_motion_field(path, motion_field, dtype, save_format):
         other_path.unlink()
 
 
-def generate_camera_motion_field(row, mode, data_root, save_root_dir, center_vector_cache, args, scene_cache=None):
+def generate_camera_motion_field(
+    row, mode, data_root, save_root_dir, center_vector_cache, args, scene_cache=None
+):
     split_root = data_root / mode
     scene_dir = row["scene_dir"]
     scene_root = split_root / scene_dir
@@ -185,16 +216,24 @@ def generate_camera_motion_field(row, mode, data_root, save_root_dir, center_vec
     blur_file = scene_root / blur_path
     sensor_file = scene_root / "sensor_windows.npy"
     timestamp_file = scene_root / "sensor_timestamps.npy"
-    missing_files = [path for path in (scene_root, blur_file, sensor_file, timestamp_file) if not path.exists()]
+    missing_files = [
+        path
+        for path in (scene_root, blur_file, sensor_file, timestamp_file)
+        if not path.exists()
+    ]
     if missing_files:
         if args.strict:
-            raise FileNotFoundError(f"Missing files for {mode}/{scene_dir}: {missing_files}")
+            raise FileNotFoundError(
+                f"Missing files for {mode}/{scene_dir}: {missing_files}"
+            )
         return False
 
     height, width = read_image_shape(blur_file)
     cache_key = (height, width, args.downsample)
     if cache_key not in center_vector_cache:
-        center_vector_cache[cache_key] = build_center_vectors(height, width, args.downsample)
+        center_vector_cache[cache_key] = build_center_vectors(
+            height, width, args.downsample
+        )
 
     sensor_idx = row_sensor_idx(row)
     if scene_cache is not None:
@@ -257,7 +296,7 @@ def generate_mode(args, mode):
     with metadata_file.open("r", newline="", encoding="utf-8-sig") as file:
         rows = list(csv.DictReader(file))
     if args.max_samples:
-        rows = rows[:args.max_samples]
+        rows = rows[: args.max_samples]
 
     save_root_dir = args.save_root_dir or args.data_root
     save_count = 0
@@ -266,9 +305,15 @@ def generate_mode(args, mode):
         worker_args["mode"] = mode
         worker_args["data_root"] = str(args.data_root)
         worker_args["save_root_dir"] = str(save_root_dir)
-        with mp.Pool(processes=args.num_workers, initializer=init_worker, initargs=(worker_args,)) as pool:
-            iterator = pool.imap_unordered(generate_row_worker, rows, chunksize=args.chunksize)
-            for saved in tqdm(iterator, total=len(rows), desc=f"{mode} camera_motion_field"):
+        with mp.Pool(
+            processes=args.num_workers, initializer=init_worker, initargs=(worker_args,)
+        ) as pool:
+            iterator = pool.imap_unordered(
+                generate_row_worker, rows, chunksize=args.chunksize
+            )
+            for saved in tqdm(
+                iterator, total=len(rows), desc=f"{mode} camera_motion_field"
+            ):
                 save_count += saved
     else:
         center_vector_cache = {}
@@ -285,12 +330,16 @@ def generate_mode(args, mode):
             )
             save_count += int(saved)
 
-    print(f"{mode}: saved {save_count} files under {save_root_dir / mode / 'camera_motion_field'}")
+    print(
+        f"{mode}: saved {save_count} files under {save_root_dir / mode / 'camera_motion_field'}"
+    )
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["train", "val", "test", "all"], default="all")
+    parser.add_argument(
+        "--mode", choices=["train", "val", "test", "all"], default="all"
+    )
     parser.add_argument("--data_root", type=Path, default=Path("data/IMUBlur"))
     parser.add_argument("--save_root_dir", type=Path)
     parser.add_argument("--metadata_name", default="metadata.csv")

@@ -39,7 +39,9 @@ from utils.utils_visualization import (
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Validate a fine-tuned Stage1->CMF->Stage2 checkpoint.")
+    parser = argparse.ArgumentParser(
+        description="Validate a fine-tuned Stage1->CMF->Stage2 checkpoint."
+    )
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--config", default=None)
     parser.add_argument("--dataset-root", default=None)
@@ -65,14 +67,18 @@ def parse_args():
 def _load_checkpoint(path, device):
     checkpoint = torch_load_checkpoint(path, map_location=device)
     if not isinstance(checkpoint, dict) or "model" not in checkpoint:
-        raise KeyError(f"Fine-tune checkpoint must contain a combined model state: {path}")
+        raise KeyError(
+            f"Fine-tune checkpoint must contain a combined model state: {path}"
+        )
     return checkpoint
 
 
 def _config_from_args(args, checkpoint):
     cfg = load_config(args.config) if args.config else checkpoint.get("config")
     if cfg is None:
-        raise ValueError("Missing config. Pass --config or use a checkpoint saved by train_stage1_stage2_finetune.py.")
+        raise ValueError(
+            "Missing config. Pass --config or use a checkpoint saved by train_stage1_stage2_finetune.py."
+        )
     cfg = upgrade_stage1_config_names(cfg)
     if args.dataset_root:
         cfg.setdefault("dataset", {})["root"] = args.dataset_root
@@ -98,7 +104,9 @@ def _load_motion_field(path):
         motion_field = np.load(path).astype(np.float32)
     if motion_field.shape[0] <= 64 and motion_field.shape[0] < motion_field.shape[-1]:
         return torch.from_numpy(np.array(motion_field, dtype=np.float32, copy=True))
-    return torch.from_numpy(np.array(motion_field.transpose(2, 0, 1), dtype=np.float32, copy=True))
+    return torch.from_numpy(
+        np.array(motion_field.transpose(2, 0, 1), dtype=np.float32, copy=True)
+    )
 
 
 def _format(value, digits=8):
@@ -136,13 +144,17 @@ def main():
         num_workers=int(args.num_workers),
         pin_memory=device.type == "cuda",
     )
-    model = build_stage1_stage2_finetune_model(
-        stage1_config=stage1_cfg,
-        stage2_config=stage2_cfg,
-        motion_downsample=cfg.get("dataset", {}).get("motion_downsample", 2),
-        default_dt=cfg.get("time", {}).get("default_dt", 1.0 / 240.0),
-        camera_matrix=camera_matrix,
-    ).to(device).eval()
+    model = (
+        build_stage1_stage2_finetune_model(
+            stage1_config=stage1_cfg,
+            stage2_config=stage2_cfg,
+            motion_downsample=cfg.get("dataset", {}).get("motion_downsample", 2),
+            default_dt=cfg.get("time", {}).get("default_dt", 1.0 / 240.0),
+            camera_matrix=camera_matrix,
+        )
+        .to(device)
+        .eval()
+    )
     model.load_state_dict(checkpoint["model"], strict=True)
     criterion = build_stage1_stage2_finetune_loss(cfg).to(device)
 
@@ -151,10 +163,16 @@ def main():
         realblur_preset=args.realblur_metrics,
         has_target=has_gt,
     )
-    iqa_metrics = Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
+    iqa_metrics = (
+        Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
+    )
     load_target_gyro = bool(cfg.get("dataset", {}).get("load_target_gyro", False))
     load_target_cmf = bool(cfg.get("dataset", {}).get("load_target_cmf", False))
-    metric_names = ["loss", "image_loss", "gyro_loss", "cmf_loss", "psnr", "ssim"] if has_gt else []
+    metric_names = (
+        ["loss", "image_loss", "gyro_loss", "cmf_loss", "psnr", "ssim"]
+        if has_gt
+        else []
+    )
     if load_target_gyro:
         metric_names.extend(["gyro_mae", "gyro_rmse"])
     if load_target_cmf:
@@ -175,7 +193,9 @@ def main():
         if max_batches is not None and batch_idx >= int(max_batches):
             break
         tensor_batch = {
-            key: value.to(device, non_blocking=True) if torch.is_tensor(value) else value
+            key: value.to(device, non_blocking=True)
+            if torch.is_tensor(value)
+            else value
             for key, value in batch.items()
         }
         outputs = model(
@@ -194,12 +214,29 @@ def main():
         ssim_values = sample_ssim(pred, sharp).detach().cpu() if has_gt else None
         extra_values = iqa_metrics(pred, sharp) if iqa_metrics is not None else {}
         if load_target_gyro:
-            gyro_mae_values = (outputs["pred_gyro"] - target_gyro).abs().flatten(1).mean(dim=1).detach().cpu()
-            gyro_rmse_values = torch.sqrt(((outputs["pred_gyro"] - target_gyro) ** 2).flatten(1).mean(dim=1)).detach().cpu()
+            gyro_mae_values = (
+                (outputs["pred_gyro"] - target_gyro)
+                .abs()
+                .flatten(1)
+                .mean(dim=1)
+                .detach()
+                .cpu()
+            )
+            gyro_rmse_values = (
+                torch.sqrt(
+                    ((outputs["pred_gyro"] - target_gyro) ** 2).flatten(1).mean(dim=1)
+                )
+                .detach()
+                .cpu()
+            )
         else:
             gyro_mae_values = None
             gyro_rmse_values = None
-        cmf_epe_value = cmf_epe(outputs["cmf"], target_cmf.float()).detach().cpu() if target_cmf is not None else None
+        cmf_epe_value = (
+            cmf_epe(outputs["cmf"], target_cmf.float()).detach().cpu()
+            if target_cmf is not None
+            else None
+        )
 
         batch_size = pred.shape[0]
         stems = batch_meta_list(batch, "stem", batch_size, "sample")
@@ -208,8 +245,7 @@ def main():
         motion_paths = batch_meta_list(batch, "motion_field_path", batch_size, "")
         image_cfg = stage1_cfg.get("image", {})
 
-        batch_metrics = {
-        }
+        batch_metrics = {}
         if load_target_gyro:
             batch_metrics["gyro_mae"] = float(gyro_mae_values.mean())
             batch_metrics["gyro_rmse"] = float(gyro_rmse_values.mean())
@@ -249,7 +285,9 @@ def main():
             name = safe_name(f"{indices[idx]:06d}", types[idx], stems[idx])
             row = {"index": indices[idx], "type": types[idx], "stem": stems[idx]}
             for metric_name in metric_names:
-                row[metric_name] = _format(metrics[metric_name], digits=6 if metric_name == "psnr" else 8)
+                row[metric_name] = _format(
+                    metrics[metric_name], digits=6 if metric_name == "psnr" else 8
+                )
 
             if args.save_limit is None or saved < int(args.save_limit):
                 target_cmf_cpu = _load_motion_field(motion_paths[idx])
@@ -307,20 +345,24 @@ def main():
                 saved += 1
             rows.append(row)
 
-    fieldnames = list(dict.fromkeys([
-        "index",
-        "type",
-        "stem",
-        *metric_names,
-        "cmf_mae",
-        "cmf_rmse",
-        "cmf_epe",
-        "gyro_visual_path",
-        "cmf_visual_path",
-        "cmf_compare_visual_path",
-        "stage2_visual_path",
-        "output_path",
-    ]))
+    fieldnames = list(
+        dict.fromkeys(
+            [
+                "index",
+                "type",
+                "stem",
+                *metric_names,
+                "cmf_mae",
+                "cmf_rmse",
+                "cmf_epe",
+                "gyro_visual_path",
+                "cmf_visual_path",
+                "cmf_compare_visual_path",
+                "stage2_visual_path",
+                "output_path",
+            ]
+        )
+    )
     metrics = {
         "overall": overall.as_dict(),
         "by_type": by_type.as_dict(),

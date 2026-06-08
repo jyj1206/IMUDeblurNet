@@ -1,9 +1,9 @@
 param(
-    [string]$Stage1Checkpoint = "weights\best_stage1_V2.pt",
-    [string]$IMUBlurRoot = "data\IMUBlurV2",
+    [string]$Stage1Checkpoint = "weights\best_stage1_no_aux.pt",
+    [string]$IMUBlurRoot = "data\IMUBlur",
     [string]$IMURealRoot = "data\IMURealBlur",
     [string]$Split = "test",
-    [string]$OutputRoot = "runs",
+    [string]$OutputRoot = "runs/best_stage1_no_aux_dec",
     [int]$BatchSize = 1,
     [int]$NumWorkers = 0,
     [int]$MaxBatches = -1,

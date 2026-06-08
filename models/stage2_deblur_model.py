@@ -63,16 +63,11 @@ class MotionGuidedDeblurNet(nn.Module):
         self.ups = nn.ModuleList()
         self.decoders = nn.ModuleList()
 
-        # -------------------------
-        # Encoder
-        # -------------------------
         chan = width
 
         for idx, num_blocks in enumerate(enc_blk_nums):
             self.encoders.append(
-                nn.Sequential(
-                    *[NAFBlock(chan) for _ in range(num_blocks)]
-                )
+                nn.Sequential(*[NAFBlock(chan) for _ in range(num_blocks)])
             )
 
             if self.use_motion:
@@ -97,40 +92,26 @@ class MotionGuidedDeblurNet(nn.Module):
 
             chan = chan * 2
 
-        # -------------------------
-        # Bottleneck
-        # -------------------------
         num_motion_blocks = 4
         blocks_per_group = middle_blk_num // num_motion_blocks
 
         for _ in range(num_motion_blocks):
             self.middle_blks.append(
-                nn.Sequential(
-                    *[NAFBlock(chan) for _ in range(blocks_per_group)]
-                )
+                nn.Sequential(*[NAFBlock(chan) for _ in range(blocks_per_group)])
             )
 
             if self.use_motion:
-                self.motion_deblur_blks.append(
-                    MotionGuidedDeblurringBlock(chan)
-                )
+                self.motion_deblur_blks.append(MotionGuidedDeblurringBlock(chan))
 
         remain_blocks = middle_blk_num % num_motion_blocks
         if remain_blocks > 0:
             self.middle_blks.append(
-                nn.Sequential(
-                    *[NAFBlock(chan) for _ in range(remain_blocks)]
-                )
+                nn.Sequential(*[NAFBlock(chan) for _ in range(remain_blocks)])
             )
 
             if self.use_motion:
-                self.motion_deblur_blks.append(
-                    MotionGuidedDeblurringBlock(chan)
-                )
+                self.motion_deblur_blks.append(MotionGuidedDeblurringBlock(chan))
 
-        # -------------------------
-        # Decoder
-        # -------------------------
         for num_blocks in dec_blk_nums:
             self.ups.append(
                 nn.Sequential(
@@ -147,9 +128,7 @@ class MotionGuidedDeblurNet(nn.Module):
             chan = chan // 2
 
             self.decoders.append(
-                nn.Sequential(
-                    *[NAFBlock(chan) for _ in range(num_blocks)]
-                )
+                nn.Sequential(*[NAFBlock(chan) for _ in range(num_blocks)])
             )
 
         self.padder_size = 2 ** len(self.encoders)
@@ -173,9 +152,6 @@ class MotionGuidedDeblurNet(nn.Module):
 
         encs = []
 
-        # -------------------------
-        # Encoder
-        # -------------------------
         for idx, (encoder, down) in enumerate(zip(self.encoders, self.downs)):
             x = encoder(x)
             encs.append(x)
@@ -184,17 +160,11 @@ class MotionGuidedDeblurNet(nn.Module):
                 motion_feat = self.motion_refine_blks[idx](x, motion_feat)
             x = down(x)
 
-        # -------------------------
-        # Bottleneck
-        # -------------------------
         for idx, middle_blk in enumerate(self.middle_blks):
             x = middle_blk(x)
             if self.use_motion:
                 x, motion_feat = self.motion_deblur_blks[idx](x, motion_feat)
 
-        # -------------------------
-        # Decoder
-        # -------------------------
         for decoder, up, enc_skip in zip(
             self.decoders,
             self.ups,
@@ -206,7 +176,6 @@ class MotionGuidedDeblurNet(nn.Module):
 
         x = self.ending(x)
 
-        # residual learning
         x = x + blur
 
         return x[:, :, :h, :w]
@@ -309,4 +278,3 @@ if __name__ == "__main__":
 
     print("params:", sum(p.numel() for p in net.parameters()))
     print("out:", out.shape)
-

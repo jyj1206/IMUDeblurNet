@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument("--output-root", default="runs")
     parser.add_argument("--max-batches", type=int, default=None)
     parser.add_argument("--save-limit", type=int, default=None)
-    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--non-strict", action="store_true")
@@ -101,8 +101,7 @@ def _axis_alignment(pred_values, target_values):
     return {
         "count": int(pred.shape[0]),
         "corr_pred_rows_target_cols": [
-            [float(corr[row, col].item()) for col in range(3)]
-            for row in range(3)
+            [float(corr[row, col].item()) for col in range(3)] for row in range(3)
         ],
         "best_match_per_pred_axis": best,
     }
@@ -113,7 +112,9 @@ def _diagnostics(records):
     scenes = {}
     for record in records:
         group = normalize_motion_type(record["type"])
-        groups.setdefault(group, {"pred": [], "target": [], "target_norm": [], "pred_norm": []})
+        groups.setdefault(
+            group, {"pred": [], "target": [], "target_norm": [], "pred_norm": []}
+        )
         groups[group]["pred"].append(record["pred"])
         groups[group]["target"].append(record["target"])
         groups[group]["target_norm"].append(record["target"].norm(dim=-1))
@@ -159,17 +160,28 @@ def main():
     dataset = build_stage1_dataset(cfg, split=split)
     loader = DataLoader(
         dataset,
-        batch_size=int(args.batch_size or val_cfg.get("batch_size", cfg["dataset"].get("batch_size", 8))),
+        batch_size=int(
+            args.batch_size
+            or val_cfg.get("batch_size", cfg["dataset"].get("batch_size", 8))
+        ),
         shuffle=False,
-        num_workers=int(args.num_workers if args.num_workers is not None else val_cfg.get("num_workers", 0)),
+        num_workers=int(
+            args.num_workers
+            if args.num_workers is not None
+            else val_cfg.get("num_workers", 0)
+        ),
         pin_memory=device.type == "cuda",
     )
 
     model = build_stage1_model(cfg).to(device).eval()
-    load_report = load_model_weights(model, args.checkpoint, device=device, strict=not args.non_strict)
+    load_report = load_model_weights(
+        model, args.checkpoint, device=device, strict=not args.non_strict
+    )
     loss_cfg = cfg.get("loss", {})
     criterion = Stage1AuxLoss(
-        gyro_loss=loss_cfg.get("gyro_loss", cfg.get("train", {}).get("loss", "smooth_l1")),
+        gyro_loss=loss_cfg.get(
+            "gyro_loss", cfg.get("train", {}).get("loss", "smooth_l1")
+        ),
         aux_loss=loss_cfg.get("aux_loss", "smooth_l1"),
         aux_weight=loss_cfg.get("aux_weight", 0.05),
         default_dt=cfg.get("time", {}).get("default_dt", 1.0 / 240.0),
@@ -179,7 +191,17 @@ def main():
     )
     image_cfg = cfg.get("image", {})
 
-    metric_names = ["loss", "gyro_loss", "aux_loss", "mae", "rmse", "pose_omega_mae"]
+    metric_names = [
+        "loss",
+        "gyro_loss",
+        "aux_loss",
+        "mae",
+        "gyro_x_mae",
+        "gyro_y_mae",
+        "gyro_z_mae",
+        "rmse",
+        "pose_omega_mae",
+    ]
     overall = MetricAverager(metric_names)
     by_type = GroupedMetricAverager(metric_names)
     sample_rows = []
@@ -199,7 +221,9 @@ def main():
 
         image = batch["image"].to(device, non_blocking=True).float()
         target_gyro = batch["gyro"].to(device, non_blocking=True).float()
-        timestamp_window = batch["timestamp_window"].to(device, non_blocking=True).float()
+        timestamp_window = (
+            batch["timestamp_window"].to(device, non_blocking=True).float()
+        )
         focal_length = batch["focal_length"].to(device, non_blocking=True).float()
         outputs = model(image, focal_length=focal_length, return_aux=True)
         _, loss_metrics, omega_gt = criterion(outputs, target_gyro, timestamp_window)
@@ -210,7 +234,10 @@ def main():
         else:
             pose_omega_mae = torch.zeros(image.shape[0], device=device)
         per_item_loss = (pred_gyro - target_gyro).abs().flatten(1).mean(dim=1)
-        per_item_rmse = torch.sqrt(((pred_gyro - target_gyro) ** 2).flatten(1).mean(dim=1))
+        per_item_axis_mae = (pred_gyro - target_gyro).abs().mean(dim=1)
+        per_item_rmse = torch.sqrt(
+            ((pred_gyro - target_gyro) ** 2).flatten(1).mean(dim=1)
+        )
 
         batch_size = image.shape[0]
         stems = batch_meta_list(batch, "stem", batch_size, "sample")
@@ -226,6 +253,9 @@ def main():
                 "gyro_loss": float(loss_metrics["gyro_loss"].detach().cpu()),
                 "aux_loss": float(loss_metrics["aux_loss"].detach().cpu()),
                 "mae": float(per_item_loss[idx].detach().cpu()),
+                "gyro_x_mae": float(per_item_axis_mae[idx, 0].detach().cpu()),
+                "gyro_y_mae": float(per_item_axis_mae[idx, 1].detach().cpu()),
+                "gyro_z_mae": float(per_item_axis_mae[idx, 2].detach().cpu()),
                 "rmse": float(per_item_rmse[idx].detach().cpu()),
                 "pose_omega_mae": float(pose_omega_mae[idx].detach().cpu()),
             }
@@ -283,7 +313,15 @@ def main():
     save_csv(
         run_dir / "samples.csv",
         sample_rows,
-        ["index", "type", "scene_dir", "stem", "target_gyro_norm", "pred_gyro_norm", *metric_names],
+        [
+            "index",
+            "type",
+            "scene_dir",
+            "stem",
+            "target_gyro_norm",
+            "pred_gyro_norm",
+            *metric_names,
+        ],
     )
     print(f"saved: {run_dir}")
     print(metrics["overall"])

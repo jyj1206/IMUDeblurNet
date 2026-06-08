@@ -39,7 +39,9 @@ class IAAIFpnDecoder(nn.Module):
 
     def forward(self, features):
         if len(features) != len(self.lateral):
-            raise ValueError(f"expected {len(self.lateral)} features, got {len(features)}")
+            raise ValueError(
+                f"expected {len(self.lateral)} features, got {len(features)}"
+            )
 
         x = self.lateral[-1](features[-1])
         x = self.refine[-1](x)

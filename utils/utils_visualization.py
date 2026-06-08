@@ -53,7 +53,9 @@ def _put_text(image, text, org, scale=0.55, color=(245, 245, 245), thickness=1):
     )
 
 
-def make_stage2_comparison(blur, pred, sharp=None, psnr=None, ssim=None, title=None, max_panel_height=520):
+def make_stage2_comparison(
+    blur, pred, sharp=None, psnr=None, ssim=None, title=None, max_panel_height=520
+):
     blur = tensor_to_rgb_uint8(blur)
     pred = tensor_to_rgb_uint8(pred)
     sharp = tensor_to_rgb_uint8(sharp) if sharp is not None else None
@@ -68,7 +70,10 @@ def make_stage2_comparison(blur, pred, sharp=None, psnr=None, ssim=None, title=N
 
     panels = [_resize_to_height(img, h) for img in panel_images]
     panel_w = min(panel.shape[1] for panel in panels)
-    panels = [cv2.resize(panel, (panel_w, h), interpolation=cv2.INTER_AREA) for panel in panels]
+    panels = [
+        cv2.resize(panel, (panel_w, h), interpolation=cv2.INTER_AREA)
+        for panel in panels
+    ]
 
     separator_w = 8
     separator = np.full((h, separator_w, 3), 245, dtype=np.uint8)
@@ -184,23 +189,68 @@ def make_stage1_gyro_visualization(
     plot_right = image_bgr.shape[1] - 18
     plot_top = 34
     plot_bottom = panel_h - 46
-    cv2.rectangle(panel, (plot_left, plot_top), (plot_right, plot_bottom), (78, 78, 78), 1)
+    cv2.rectangle(
+        panel, (plot_left, plot_top), (plot_right, plot_bottom), (78, 78, 78), 1
+    )
     zero_y = _value_to_y(0.0, value_min, value_max, plot_top, plot_bottom)
-    cv2.line(panel, (plot_left, zero_y), (plot_right, zero_y), (60, 60, 60), 1, cv2.LINE_AA)
+    cv2.line(
+        panel, (plot_left, zero_y), (plot_right, zero_y), (60, 60, 60), 1, cv2.LINE_AA
+    )
 
     colors = [(80, 210, 255), (90, 230, 120), (245, 170, 85)]
     labels = ["gyro x", "gyro y", "gyro z"]
     for axis_idx, (color, label) in enumerate(zip(colors, labels)):
-        _draw_series(panel, pred[:, axis_idx], value_min, value_max, plot_left, plot_right, plot_top, plot_bottom, color, 2)
+        _draw_series(
+            panel,
+            pred[:, axis_idx],
+            value_min,
+            value_max,
+            plot_left,
+            plot_right,
+            plot_top,
+            plot_bottom,
+            color,
+            2,
+        )
         if target is not None:
-            _draw_series(panel, target[:, axis_idx], value_min, value_max, plot_left, plot_right, plot_top, plot_bottom, color, 1, dashed=True)
-        _put_text(panel, label, (plot_left + axis_idx * 92, 22), scale=0.46, color=color)
+            _draw_series(
+                panel,
+                target[:, axis_idx],
+                value_min,
+                value_max,
+                plot_left,
+                plot_right,
+                plot_top,
+                plot_bottom,
+                color,
+                1,
+                dashed=True,
+            )
+        _put_text(
+            panel, label, (plot_left + axis_idx * 92, 22), scale=0.46, color=color
+        )
 
-    _put_text(panel, "pred: solid", (plot_left, panel_h - 20), scale=0.45, color=(225, 225, 225))
+    _put_text(
+        panel,
+        "pred: solid",
+        (plot_left, panel_h - 20),
+        scale=0.45,
+        color=(225, 225, 225),
+    )
     if target is not None:
-        _put_text(panel, "target: dashed", (plot_left + 105, panel_h - 20), scale=0.45, color=(180, 180, 180))
-    _put_text(panel, f"{value_max:+.3g}", (6, plot_top + 6), scale=0.38, color=(180, 180, 180))
-    _put_text(panel, f"{value_min:+.3g}", (6, plot_bottom), scale=0.38, color=(180, 180, 180))
+        _put_text(
+            panel,
+            "target: dashed",
+            (plot_left + 105, panel_h - 20),
+            scale=0.45,
+            color=(180, 180, 180),
+        )
+    _put_text(
+        panel, f"{value_max:+.3g}", (6, plot_top + 6), scale=0.38, color=(180, 180, 180)
+    )
+    _put_text(
+        panel, f"{value_min:+.3g}", (6, plot_bottom), scale=0.38, color=(180, 180, 180)
+    )
 
     return np.concatenate([header, image_bgr, panel], axis=0)
 
@@ -381,7 +431,9 @@ def _align_cmf_pair(pred, target):
     c = min(pred.shape[2], target.shape[2])
     c -= c % 2
     if c <= 0:
-        raise ValueError(f"CMF channels must include at least one vector pair: {pred.shape}, {target.shape}")
+        raise ValueError(
+            f"CMF channels must include at least one vector pair: {pred.shape}, {target.shape}"
+        )
     return pred[:h, :w, :c], target[:h, :w, :c]
 
 
@@ -397,7 +449,11 @@ def _draw_cmf_error_heatmap(image_rgb, epe):
     epe = np.asarray(epe, dtype=np.float32)
     finite_epe = epe[np.isfinite(epe)]
     heat_source = np.where(np.isfinite(epe), epe, 0.0)
-    heat = cv2.resize(heat_source, (image_rgb.shape[1], image_rgb.shape[0]), interpolation=cv2.INTER_LINEAR)
+    heat = cv2.resize(
+        heat_source,
+        (image_rgb.shape[1], image_rgb.shape[0]),
+        interpolation=cv2.INTER_LINEAR,
+    )
     scale = np.percentile(finite_epe, 99.0) if finite_epe.size else 0.0
     scale = max(float(scale), 1e-8)
     heat_norm = np.clip(heat / scale, 0.0, 1.0)
@@ -431,7 +487,19 @@ def _value_to_y(value, value_min, value_max, top, bottom):
     return int(round(bottom - ratio * (bottom - top)))
 
 
-def _draw_series(canvas, values, value_min, value_max, left, right, top, bottom, color, thickness, dashed=False):
+def _draw_series(
+    canvas,
+    values,
+    value_min,
+    value_max,
+    left,
+    right,
+    top,
+    bottom,
+    color,
+    thickness,
+    dashed=False,
+):
     values = np.asarray(values, dtype=np.float32)
     xs = np.linspace(left, right, len(values))
     points = [

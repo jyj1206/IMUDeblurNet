@@ -1,6 +1,3 @@
-# Stage 2 deblurring training config for IMUBlurV2.
-# Values under model.args are passed to models/stage2_deblur_model.py::build_model.
-
 experiment:
   name: stage2_deblur_v2_training
   result_root: result

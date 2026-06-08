@@ -10,9 +10,15 @@ def normalize_config(config):
 
     if paths:
         experiment = config.setdefault("experiment", {})
-        experiment["name"] = paths.get("run_name", experiment.get("name", "stage2_motion_field_deblur"))
-        experiment["result_root"] = paths.get("log_root", experiment.get("result_root", "result"))
-        experiment["run_prefix"] = paths.get("run_prefix", experiment.get("run_prefix", "run"))
+        experiment["name"] = paths.get(
+            "run_name", experiment.get("name", "stage2_motion_field_deblur")
+        )
+        experiment["result_root"] = paths.get(
+            "log_root", experiment.get("result_root", "result")
+        )
+        experiment["run_prefix"] = paths.get(
+            "run_prefix", experiment.get("run_prefix", "run")
+        )
         if paths.get("output_dir") is not None:
             experiment["output_dir"] = paths["output_dir"]
 
@@ -27,25 +33,41 @@ def normalize_config(config):
             paths.get("dataset_root", dataset.get("root", "data/IMUBlur")),
         )
         dataset["split"] = data.get("train_split", dataset.get("split", "train"))
-        dataset["metadata_name"] = data.get("metadata_name", dataset.get("metadata_name", "metadata.csv"))
+        dataset["metadata_name"] = data.get(
+            "metadata_name", dataset.get("metadata_name", "metadata.csv")
+        )
         dataset["patch_size"] = data.get("patch_size", dataset.get("patch_size", 256))
         dataset["batch_size"] = data.get("batch_size", dataset.get("batch_size", 4))
         dataset["num_workers"] = data.get("num_workers", dataset.get("num_workers", 0))
 
         validation = config.setdefault("validation", {})
-        validation["enabled"] = data.get("use_validation", validation.get("enabled", True))
+        validation["enabled"] = data.get(
+            "use_validation", validation.get("enabled", True)
+        )
         validation["split"] = data.get("val_split", validation.get("split", "val"))
-        validation["batch_size"] = data.get("val_batch_size", validation.get("batch_size", 1))
-        validation["num_workers"] = data.get("val_workers", validation.get("num_workers", 0))
+        validation["batch_size"] = data.get(
+            "val_batch_size", validation.get("batch_size", 1)
+        )
+        validation["num_workers"] = data.get(
+            "val_workers", validation.get("num_workers", 0)
+        )
         if data.get("val_max_batches") is not None:
             validation["max_batches"] = data["val_max_batches"]
 
     if motion:
         dataset = config.setdefault("dataset", {})
-        dataset["motion_field_root"] = motion.get("root", dataset.get("motion_field_root"))
-        dataset["motion_field_dir"] = motion.get("dir", dataset.get("motion_field_dir", "camera_motion_field"))
-        dataset["motion_field_ext"] = motion.get("ext", dataset.get("motion_field_ext", "npy"))
-        dataset["motion_downsample"] = motion.get("downsample", dataset.get("motion_downsample", 2))
+        dataset["motion_field_root"] = motion.get(
+            "root", dataset.get("motion_field_root")
+        )
+        dataset["motion_field_dir"] = motion.get(
+            "dir", dataset.get("motion_field_dir", "camera_motion_field")
+        )
+        dataset["motion_field_ext"] = motion.get(
+            "ext", dataset.get("motion_field_ext", "npy")
+        )
+        dataset["motion_downsample"] = motion.get(
+            "downsample", dataset.get("motion_downsample", 2)
+        )
 
     model = config.setdefault("model", {})
     model_args = dict(model.get("args") or {})

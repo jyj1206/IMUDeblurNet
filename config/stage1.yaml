@@ -1,5 +1,3 @@
-# Stage1 experiment 24: exp01 baseline with gradient clipping only.
-
 experiment:
   name: stage1_exp24_regularized_gradclip_only
   result_root: result

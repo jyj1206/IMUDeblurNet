@@ -116,7 +116,9 @@ class Stage1Net(nn.Module):
     ):
         super().__init__()
         self.use_aux_branch = bool(use_aux_branch)
-        self.backbone = MSCAN(bgr255_input=bgr255_input, activation_clip=activation_clip)
+        self.backbone = MSCAN(
+            bgr255_input=bgr255_input, activation_clip=activation_clip
+        )
         self.gyro_head = GlobalGyroHead(
             in_channels=512,
             hidden_channels=head_hidden,
@@ -141,7 +143,13 @@ class Stage1Net(nn.Module):
             "backbone": _load_mscan_backbone(self.backbone, backbone_weights),
             "decoders": _load_decoder_weights(self, decoder_weights or backbone_weights)
             if self.use_aux_branch
-            else {"path": None, "loaded": 0, "skipped": 0, "missing": 0, "unexpected": 0},
+            else {
+                "path": None,
+                "loaded": 0,
+                "skipped": 0,
+                "missing": 0,
+                "unexpected": 0,
+            },
         }
 
         if freeze_backbone:

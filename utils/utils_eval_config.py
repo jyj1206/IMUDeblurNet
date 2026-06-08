@@ -66,7 +66,9 @@ def checkpoint_config(checkpoint_path, device="cpu"):
     return checkpoint.get("config")
 
 
-def load_eval_config(config_path=None, checkpoint_path=None, device="cpu", normalize=False):
+def load_eval_config(
+    config_path=None, checkpoint_path=None, device="cpu", normalize=False
+):
     if config_path:
         config = load_config(config_path)
         source = str(Path(config_path))

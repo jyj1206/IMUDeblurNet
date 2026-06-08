@@ -23,12 +23,36 @@ def save_history(history, run_dir):
     _save_split_csv(
         train_rows,
         metric_dir / "train_log.csv",
-        ["epoch", "iteration", "loss", "loss_last", "mae", "psnr", "ssim", "lr", "count"],
+        [
+            "epoch",
+            "iteration",
+            "loss",
+            "loss_last",
+            "mae",
+            "gyro_x_mae",
+            "gyro_y_mae",
+            "gyro_z_mae",
+            "psnr",
+            "ssim",
+            "lr",
+            "count",
+        ],
     )
     _save_split_csv(
         val_rows,
         metric_dir / "validation_log.csv",
-        ["epoch", "iteration", "loss", "mae", "psnr", "ssim", "count"],
+        [
+            "epoch",
+            "iteration",
+            "loss",
+            "mae",
+            "gyro_x_mae",
+            "gyro_y_mae",
+            "gyro_z_mae",
+            "psnr",
+            "ssim",
+            "count",
+        ],
     )
     _plot_metric_curves(metric_dir, train_rows, val_rows)
 
@@ -58,6 +82,9 @@ def _plot_metric_curves(metric_dir, train_rows, val_rows):
         "loss": "Loss",
         "loss_last": "Last Loss",
         "mae": "MAE",
+        "gyro_x_mae": "Gyro X MAE",
+        "gyro_y_mae": "Gyro Y MAE",
+        "gyro_z_mae": "Gyro Z MAE",
         "psnr": "PSNR (dB)",
         "ssim": "SSIM",
         "lr": "Learning Rate",
@@ -99,7 +126,17 @@ def _plot_metric_curves(metric_dir, train_rows, val_rows):
 
 def _metric_names(*row_groups):
     skip = {"split", "epoch", "iteration", "count"}
-    preferred = ["loss", "mae", "psnr", "ssim", "loss_last", "lr"]
+    preferred = [
+        "loss",
+        "mae",
+        "gyro_x_mae",
+        "gyro_y_mae",
+        "gyro_z_mae",
+        "psnr",
+        "ssim",
+        "loss_last",
+        "lr",
+    ]
     names = []
     for rows in row_groups:
         for row in rows:

@@ -1,6 +1,3 @@
-# Joint fine-tuning with a very small Stage1 LR and Stage2 LR 2e-6.
-# Patch size stays at 256; this allows Stage1 to adapt gently under image + gyro/CMF losses.
-
 experiment:
   name: stage1_stage2_finetune_joint_low_stage1_lr2e-6_50k
   result_root: result

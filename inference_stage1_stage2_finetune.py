@@ -8,16 +8,30 @@ from tqdm import tqdm
 from datasets.stage1_stage2_finetune_dataset import build_stage1_stage2_finetune_dataset
 from models.stage1_stage2_finetune_model import build_stage1_stage2_finetune_model
 from utils import load_config
-from utils.utils_eval import batch_meta_int_list, batch_meta_list, create_run_dir, safe_name, save_csv, save_json
+from utils.utils_eval import (
+    batch_meta_int_list,
+    batch_meta_list,
+    create_run_dir,
+    safe_name,
+    save_csv,
+    save_json,
+)
 from utils.utils_eval_config import upgrade_stage1_config_names
 from utils.utils_metrics import sample_psnr, sample_ssim
 from utils.utils_stage_pipeline import camera_matrix_from_config, resolve_device
 from utils.utils_torch_load import torch_load_checkpoint
-from utils.utils_visualization import make_cmf_visualization, make_stage2_comparison, tensor_to_rgb_uint8, write_image
+from utils.utils_visualization import (
+    make_cmf_visualization,
+    make_stage2_comparison,
+    tensor_to_rgb_uint8,
+    write_image,
+)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run inference with a fine-tuned Stage1->CMF->Stage2 checkpoint.")
+    parser = argparse.ArgumentParser(
+        description="Run inference with a fine-tuned Stage1->CMF->Stage2 checkpoint."
+    )
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--config", default=None)
     parser.add_argument("--dataset-root", default=None)
@@ -35,14 +49,18 @@ def parse_args():
 def _load_checkpoint(path, device):
     checkpoint = torch_load_checkpoint(path, map_location=device)
     if not isinstance(checkpoint, dict) or "model" not in checkpoint:
-        raise KeyError(f"Fine-tune checkpoint must contain a combined model state: {path}")
+        raise KeyError(
+            f"Fine-tune checkpoint must contain a combined model state: {path}"
+        )
     return checkpoint
 
 
 def _config_from_args(args, checkpoint):
     cfg = load_config(args.config) if args.config else checkpoint.get("config")
     if cfg is None:
-        raise ValueError("Missing config. Pass --config or use a checkpoint saved by train_stage1_stage2_finetune.py.")
+        raise ValueError(
+            "Missing config. Pass --config or use a checkpoint saved by train_stage1_stage2_finetune.py."
+        )
     cfg = upgrade_stage1_config_names(cfg)
     if args.dataset_root:
         cfg.setdefault("dataset", {})["root"] = args.dataset_root
@@ -66,7 +84,9 @@ def main():
     camera_matrix = camera_matrix_from_config(cfg)
     split = args.split or cfg.get("validation", {}).get("split") or "val"
 
-    dataset = build_stage1_stage2_finetune_dataset(cfg, stage1_cfg, split=split, is_train=False)
+    dataset = build_stage1_stage2_finetune_dataset(
+        cfg, stage1_cfg, split=split, is_train=False
+    )
     loader = DataLoader(
         dataset,
         batch_size=int(args.batch_size),
@@ -74,13 +94,17 @@ def main():
         num_workers=int(args.num_workers),
         pin_memory=device.type == "cuda",
     )
-    model = build_stage1_stage2_finetune_model(
-        stage1_config=stage1_cfg,
-        stage2_config=stage2_cfg,
-        motion_downsample=cfg.get("dataset", {}).get("motion_downsample", 2),
-        default_dt=cfg.get("time", {}).get("default_dt", 1.0 / 240.0),
-        camera_matrix=camera_matrix,
-    ).to(device).eval()
+    model = (
+        build_stage1_stage2_finetune_model(
+            stage1_config=stage1_cfg,
+            stage2_config=stage2_cfg,
+            motion_downsample=cfg.get("dataset", {}).get("motion_downsample", 2),
+            default_dt=cfg.get("time", {}).get("default_dt", 1.0 / 240.0),
+            camera_matrix=camera_matrix,
+        )
+        .to(device)
+        .eval()
+    )
     model.load_state_dict(checkpoint["model"], strict=True)
 
     run_dir = create_run_dir(args.output_root, "stage1_stage2_finetune_inference")
@@ -94,7 +118,9 @@ def main():
         if args.limit is not None and seen >= int(args.limit):
             break
         tensor_batch = {
-            key: value.to(device, non_blocking=True) if torch.is_tensor(value) else value
+            key: value.to(device, non_blocking=True)
+            if torch.is_tensor(value)
+            else value
             for key, value in batch.items()
         }
         outputs = model(
@@ -109,8 +135,16 @@ def main():
         types = batch_meta_list(batch, "type", batch_size, "unknown")
         indices = batch_meta_int_list(batch, "index", batch_size, 0)
         has_gt = "gt" in batch
-        psnr_values = sample_psnr(pred, tensor_batch["gt"].float()).detach().cpu() if has_gt else None
-        ssim_values = sample_ssim(pred, tensor_batch["gt"].float()).detach().cpu() if has_gt else None
+        psnr_values = (
+            sample_psnr(pred, tensor_batch["gt"].float()).detach().cpu()
+            if has_gt
+            else None
+        )
+        ssim_values = (
+            sample_ssim(pred, tensor_batch["gt"].float()).detach().cpu()
+            if has_gt
+            else None
+        )
 
         for idx in range(batch_size):
             if args.limit is not None and seen >= int(args.limit):
@@ -151,7 +185,16 @@ def main():
             rows.append(row)
             seen += 1
 
-    fieldnames = ["index", "type", "stem", "psnr", "ssim", "cmf_visual_path", "stage2_visual_path", "output_path"]
+    fieldnames = [
+        "index",
+        "type",
+        "stem",
+        "psnr",
+        "ssim",
+        "cmf_visual_path",
+        "stage2_visual_path",
+        "output_path",
+    ]
     save_csv(run_dir / "samples.csv", rows, fieldnames)
     save_json(
         run_dir / "summary.json",

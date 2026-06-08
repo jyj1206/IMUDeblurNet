@@ -1,6 +1,3 @@
-# Stage1 frozen, Stage2-only fine-tuning with very low LR.
-# Use this as a conservative polish run after the 5e-6 setting saturates.
-
 experiment:
   name: stage1_stage2_finetune_freeze_stage1_lr1e-6_50k
   result_root: result

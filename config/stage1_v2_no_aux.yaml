@@ -1,5 +1,3 @@
-# Stage1 V2 ablation: gyro head only, no auxiliary pose branch.
-
 experiment:
   name: stage1_v2_no_aux
   result_root: result
@@ -9,7 +7,6 @@ dataset:
   root: data/IMUBlurV2
   split: train
   metadata_name: metadata.csv
-  # Per-GPU batch. With 8 GPUs this gives effective_batch=16.
   batch_size: 2
   num_workers: 2
   drop_last: false

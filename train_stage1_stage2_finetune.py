@@ -14,7 +14,6 @@ from utils import (
     batch_psnr,
     batch_ssim,
     build_logger,
-    build_optimizer,
     build_scheduler,
     cleanup_distributed,
     init_distributed,
@@ -42,7 +41,9 @@ from utils.utils_torch_load import torch_load_checkpoint
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="End-to-end Stage1 -> differentiable CMF -> Stage2 fine-tuning.")
+    parser = argparse.ArgumentParser(
+        description="End-to-end Stage1 -> differentiable CMF -> Stage2 fine-tuning."
+    )
     parser.add_argument("--config", default="config/stage1_stage2_finetune.yaml")
     parser.add_argument("--resume", default=None)
     return parser.parse_args()
@@ -100,7 +101,9 @@ def _build_optimizer(config, model):
     raise ValueError(f"Unknown optimizer.name: {name}")
 
 
-def _make_state(config, model, optimizer, scheduler, iteration, epoch, best_val_psnr, history):
+def _make_state(
+    config, model, optimizer, scheduler, iteration, epoch, best_val_psnr, history
+):
     return {
         "iteration": int(iteration),
         "epoch": int(epoch),
@@ -135,7 +138,9 @@ def _save_best_metrics(run_dir, iteration, metrics):
         "count": int(metrics.get("count", 0)),
     }
     path = Path(run_dir) / "best_metrics.json"
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def _move_batch(batch, device):
@@ -172,10 +177,14 @@ def _batch_metrics(outputs, batch, loss_metrics):
         "smooth_loss": float(loss_metrics["smooth_loss"].detach().cpu()),
         "psnr": float(batch_psnr(pred.detach(), sharp.detach()).detach().cpu()),
         "ssim": float(batch_ssim(pred.detach(), sharp.detach()).detach().cpu()),
-        "gyro_mae": float((outputs["pred_gyro"].detach() - target_gyro).abs().mean().detach().cpu()),
+        "gyro_mae": float(
+            (outputs["pred_gyro"].detach() - target_gyro).abs().mean().detach().cpu()
+        ),
     }
     if target_cmf is not None:
-        metrics["cmf_epe"] = float(cmf_epe(outputs["cmf"].detach(), target_cmf.float()).detach().cpu())
+        metrics["cmf_epe"] = float(
+            cmf_epe(outputs["cmf"].detach(), target_cmf.float()).detach().cpu()
+        )
     else:
         metrics["cmf_epe"] = 0.0
     return metrics
@@ -206,7 +215,9 @@ def evaluate(model, loader, criterion, device, max_batches=None, show_progress=F
     }
     count = 0
     total = len(loader) if max_batches is None else min(len(loader), int(max_batches))
-    progress = tqdm(loader, total=total, desc="val", leave=False, disable=not show_progress)
+    progress = tqdm(
+        loader, total=total, desc="val", leave=False, disable=not show_progress
+    )
     for batch_idx, batch in enumerate(progress):
         if max_batches is not None and batch_idx >= int(max_batches):
             break
@@ -219,7 +230,9 @@ def evaluate(model, loader, criterion, device, max_batches=None, show_progress=F
             sums[key] += metrics[key] * batch_size
         count += batch_size
         if show_progress:
-            progress.set_postfix(loss=sums["loss"] / max(1, count), psnr=sums["psnr"] / max(1, count))
+            progress.set_postfix(
+                loss=sums["loss"] / max(1, count), psnr=sums["psnr"] / max(1, count)
+            )
     if was_training:
         model.train()
     if count <= 0:
@@ -237,8 +250,12 @@ def main():
     cfg = upgrade_stage1_config_names(cfg)
 
     set_seed(cfg.get("train", {}).get("seed"))
-    stage1_cfg, stage1_source = _load_component_config(cfg.get("stage1", {}), None, normalize=False)
-    stage2_cfg, stage2_source = _load_component_config(cfg.get("stage2", {}), None, normalize=True)
+    stage1_cfg, stage1_source = _load_component_config(
+        cfg.get("stage1", {}), None, normalize=False
+    )
+    stage2_cfg, stage2_source = _load_component_config(
+        cfg.get("stage2", {}), None, normalize=True
+    )
     cfg["stage1_resolved_config"] = stage1_cfg
     cfg["stage2_resolved_config"] = stage2_cfg
     cfg["stage1_config_source"] = stage1_source
@@ -248,7 +265,10 @@ def main():
     device, distributed = init_distributed(cfg.get("distributed", {}))
     run_dir, resume_checkpoint = prepare_run_dir(cfg, resume)
     if distributed:
-        payload = [str(run_dir) if is_main_process() else None, str(resume_checkpoint) if is_main_process() and resume_checkpoint else None]
+        payload = [
+            str(run_dir) if is_main_process() else None,
+            str(resume_checkpoint) if is_main_process() and resume_checkpoint else None,
+        ]
         torch.distributed.broadcast_object_list(payload, src=0)
         run_dir = Path(payload[0])
         resume_checkpoint = Path(payload[1]) if payload[1] else None
@@ -318,23 +338,31 @@ def main():
         model = torch.nn.parallel.DistributedDataParallel(
             model,
             device_ids=[device.index],
-            find_unused_parameters=bool(cfg.get("distributed", {}).get("find_unused_parameters", False)),
+            find_unused_parameters=bool(
+                cfg.get("distributed", {}).get("find_unused_parameters", False)
+            ),
         )
 
     total_iterations, epochs = resolve_training_length(cfg, len(train_loader))
     optimizer = _build_optimizer(cfg, unwrap_model(model))
-    scheduler = build_scheduler(cfg, optimizer, total_iterations=total_iterations, total_epochs=epochs)
+    scheduler = build_scheduler(
+        cfg, optimizer, total_iterations=total_iterations, total_epochs=epochs
+    )
     criterion = build_stage1_stage2_finetune_loss(cfg).to(device)
 
     start_iteration = 0
     best_val_psnr = -math.inf
     history = []
     if resume_checkpoint:
-        checkpoint = _load_resume(resume_checkpoint, model, optimizer, scheduler, device)
+        checkpoint = _load_resume(
+            resume_checkpoint, model, optimizer, scheduler, device
+        )
         start_iteration = int(checkpoint.get("iteration", 0))
         best_val_psnr = float(checkpoint.get("best_val_psnr", best_val_psnr))
         history = list(checkpoint.get("history", []))
-        logger.info(f"resumed_from={resume_checkpoint}, start_iteration={start_iteration}")
+        logger.info(
+            f"resumed_from={resume_checkpoint}, start_iteration={start_iteration}"
+        )
 
     logger.info(
         f"train_samples={len(train_dataset)}, steps_per_epoch={len(train_loader)}, "
@@ -345,7 +373,9 @@ def main():
     train_cfg = cfg["train"]
     log_interval = int(train_cfg.get("log_interval", 100))
     checkpoint_interval = int(train_cfg.get("checkpoint_interval", 1000))
-    validation_interval = int(cfg.get("validation", {}).get("interval", checkpoint_interval))
+    validation_interval = int(
+        cfg.get("validation", {}).get("interval", checkpoint_interval)
+    )
     max_val_batches = cfg.get("validation", {}).get("max_batches")
     grad_clip = train_cfg.get("grad_clip_norm")
     grad_clip = float(grad_clip) if grad_clip is not None else None
@@ -382,13 +412,18 @@ def main():
             loss = loss_metrics["loss"]
             loss.backward()
             if grad_clip is not None and grad_clip > 0:
-                torch.nn.utils.clip_grad_norm_(unwrap_model(model).parameters(), grad_clip)
+                torch.nn.utils.clip_grad_norm_(
+                    unwrap_model(model).parameters(), grad_clip
+                )
             optimizer.step()
             epoch_had_update = True
             progress.update(1)
             recent_losses.append(float(loss.detach().cpu()))
 
-            if interval_due(current_iteration, log_interval) or current_iteration == total_iterations:
+            if (
+                interval_due(current_iteration, log_interval)
+                or current_iteration == total_iterations
+            ):
                 metrics = _batch_metrics(outputs, batch, loss_metrics)
                 metrics["loss"] = sum(recent_losses) / max(1, len(recent_losses))
                 metrics = _reduce_log_metrics(metrics, device)
@@ -399,7 +434,11 @@ def main():
                     append_history(history, "train", current_iteration, metrics)
                     elapsed = time.time() - last_log_time
                     last_log_time = time.time()
-                    progress.set_postfix(loss=metrics["loss"], psnr=metrics["psnr"], gyro=metrics["gyro_mae"])
+                    progress.set_postfix(
+                        loss=metrics["loss"],
+                        psnr=metrics["psnr"],
+                        gyro=metrics["gyro_mae"],
+                    )
                     logger.info(
                         f"train iter={current_iteration}/{total_iterations} "
                         f"loss={metrics['loss']:.6f} image={metrics['image_loss']:.6f} "
@@ -491,7 +530,9 @@ def main():
         )
         save_checkpoint(state, run_dir, "latest.pt")
         save_history(history, run_dir)
-        logger.info(f"finished total_iterations={current_iteration}, best_val_psnr={best_val_psnr:.4f}")
+        logger.info(
+            f"finished total_iterations={current_iteration}, best_val_psnr={best_val_psnr:.4f}"
+        )
 
     cleanup_distributed()
 

@@ -1,6 +1,6 @@
 param(
-    [string]$Stage1Checkpoint = "weights\best_stage1.pt",
-    [string]$Stage2Checkpoint = "weights\best_stage2.pt",
+    [string]$Stage1Checkpoint = "weights\best_stage1_V2.pt",
+    [string]$Stage2Checkpoint = "weights\best_stage2_V2.pt",
     [string]$GoProRoot = "data\GoPro",
     [string]$RealBlurJRoot = "data\RealBlur_J",
     [string]$Split = "test",

@@ -1,6 +1,3 @@
-# End-to-end fine-tuning ablation: freeze Stage1, train Stage2 only.
-# Blur -> frozen Stage1 gyro -> differentiable CMF -> trainable Stage2 sharp.
-
 experiment:
   name: stage1_stage2_finetune_freeze_stage1
   result_root: result

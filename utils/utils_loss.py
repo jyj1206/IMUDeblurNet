@@ -11,7 +11,10 @@ class PSNRLoss(nn.Module):
         self.scale = 10.0 / math.log(10.0)
 
     def forward(self, pred, target):
-        return self.scale * torch.log(((pred - target) ** 2).mean(dim=(1, 2, 3)) + 1e-8).mean()
+        return (
+            self.scale
+            * torch.log(((pred - target) ** 2).mean(dim=(1, 2, 3)) + 1e-8).mean()
+        )
 
 
 class NegativePSNRLoss(nn.Module):
@@ -82,7 +85,9 @@ def timestamp_deltas(timestamp_window, default_dt=1.0 / 240.0):
     return torch.where(valid, dt, fallback)
 
 
-def gyro_window_to_integrated_omega(gyro_window, timestamp_window, default_dt=1.0 / 240.0):
+def gyro_window_to_integrated_omega(
+    gyro_window, timestamp_window, default_dt=1.0 / 240.0
+):
     if gyro_window.ndim != 3 or gyro_window.shape[-1] != 3:
         raise ValueError(f"gyro_window must be BxNx3, got {tuple(gyro_window.shape)}")
     dt = timestamp_deltas(timestamp_window, default_dt=default_dt).to(
@@ -137,13 +142,17 @@ class Stage1AuxLoss(nn.Module):
         per_sample = elementwise.flatten(1).mean(dim=1)
         if sample_weight is None:
             return per_sample.mean()
-        sample_weight = sample_weight.to(device=per_sample.device, dtype=per_sample.dtype)
+        sample_weight = sample_weight.to(
+            device=per_sample.device, dtype=per_sample.dtype
+        )
         return (per_sample * sample_weight).sum() / sample_weight.sum().clamp_min(1e-6)
 
     def forward(self, outputs, target_gyro, timestamp_window):
         pred_gyro = outputs["gyro"]
         sample_weight = self._target_sample_weight(target_gyro)
-        gyro_loss = self._loss(pred_gyro, target_gyro, self.gyro_loss, sample_weight=sample_weight)
+        gyro_loss = self._loss(
+            pred_gyro, target_gyro, self.gyro_loss, sample_weight=sample_weight
+        )
         pred_pose = outputs.get("pose")
 
         if pred_pose is None or self.aux_weight <= 0:
@@ -155,16 +164,23 @@ class Stage1AuxLoss(nn.Module):
                 timestamp_window,
                 default_dt=self.default_dt,
             )
-            aux_loss = self._loss(pred_pose[:, :3], omega_gt, self.aux_loss, sample_weight=sample_weight)
+            aux_loss = self._loss(
+                pred_pose[:, :3], omega_gt, self.aux_loss, sample_weight=sample_weight
+            )
 
         total = gyro_loss + self.aux_weight * aux_loss
-        mae = (pred_gyro - target_gyro).abs().mean()
+        abs_diff = (pred_gyro - target_gyro).abs()
+        mae = abs_diff.mean()
+        axis_mae = abs_diff.mean(dim=(0, 1))
         rmse = torch.sqrt(((pred_gyro - target_gyro) ** 2).mean())
         metrics = {
             "loss": total.detach(),
             "gyro_loss": gyro_loss.detach(),
             "aux_loss": aux_loss.detach(),
             "mae": mae.detach(),
+            "gyro_x_mae": axis_mae[0].detach(),
+            "gyro_y_mae": axis_mae[1].detach(),
+            "gyro_z_mae": axis_mae[2].detach(),
             "rmse": rmse.detach(),
         }
         return total, metrics, omega_gt
@@ -262,7 +278,9 @@ class Stage1Stage2FinetuneLoss(nn.Module):
 def build_stage1_stage2_finetune_loss(config):
     loss_cfg = config.get("loss", {})
     return Stage1Stage2FinetuneLoss(
-        image_loss=loss_cfg.get("image_loss", config.get("train", {}).get("loss", "charbonnier")),
+        image_loss=loss_cfg.get(
+            "image_loss", config.get("train", {}).get("loss", "charbonnier")
+        ),
         gyro_loss=loss_cfg.get("gyro_loss", "smooth_l1"),
         cmf_loss=loss_cfg.get("cmf_loss", "smooth_l1"),
         image_weight=loss_cfg.get("image_weight", 1.0),

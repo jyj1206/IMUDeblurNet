@@ -1,6 +1,3 @@
-# End-to-end fine-tuning: Blur -> Stage1 gyro -> differentiable CMF -> Stage2 sharp.
-# Existing Stage1/Stage2 training and validation scripts are not used or modified.
-
 experiment:
   name: stage1_stage2_finetune
   result_root: result

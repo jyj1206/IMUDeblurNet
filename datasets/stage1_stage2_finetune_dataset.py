@@ -84,7 +84,9 @@ class Stage1Stage2FinetuneDataset(Dataset):
         self.vector_start = int(vector_start)
         self.vector_dim = int(vector_dim)
         self.default_dt = float(default_dt)
-        self.motion_field_root = Path(motion_field_root) if motion_field_root else self.dataset_root
+        self.motion_field_root = (
+            Path(motion_field_root) if motion_field_root else self.dataset_root
+        )
         self.motion_field_dir = motion_field_dir
         self.motion_field_ext = motion_field_ext
         self.motion_downsample = int(motion_downsample)
@@ -97,7 +99,10 @@ class Stage1Stage2FinetuneDataset(Dataset):
         patch_hw = _as_hw(self.patch_size)
         if patch_hw is not None:
             patch_h, patch_w = patch_hw
-            if patch_h % self.motion_downsample != 0 or patch_w % self.motion_downsample != 0:
+            if (
+                patch_h % self.motion_downsample != 0
+                or patch_w % self.motion_downsample != 0
+            ):
                 raise ValueError(
                     f"patch_size must be divisible by motion_downsample: "
                     f"{patch_hw} vs {self.motion_downsample}"
@@ -147,9 +152,17 @@ class Stage1Stage2FinetuneDataset(Dataset):
 
     def _motion_field_path(self, row):
         scene_dir = row.get("scene_dir", "")
-        blur_path = row["blur_path"] if self.layout == "paired" else row["center_blur_path"]
+        blur_path = (
+            row["blur_path"] if self.layout == "paired" else row["center_blur_path"]
+        )
         motion_name = f"{Path(blur_path).stem}.{self.motion_field_ext}"
-        return self.motion_field_root / self.split / self.motion_field_dir / scene_dir / motion_name
+        return (
+            self.motion_field_root
+            / self.split
+            / self.motion_field_dir
+            / scene_dir
+            / motion_name
+        )
 
     def _sensor_idx(self, row):
         return int(row.get("sensor_idx") or row.get("center_sensor_idx") or 0)
@@ -170,7 +183,7 @@ class Stage1Stage2FinetuneDataset(Dataset):
         sensor_idx = self._sensor_idx(row)
         end = self.vector_start + self.vector_dim
         target_gyro = np.asarray(
-            sensor_windows[sensor_idx, : self.num_vectors, self.vector_start:end],
+            sensor_windows[sensor_idx, : self.num_vectors, self.vector_start : end],
             dtype=np.float32,
         )
         if target_gyro.shape != (self.num_vectors, self.vector_dim):
@@ -183,7 +196,9 @@ class Stage1Stage2FinetuneDataset(Dataset):
     def _load_timestamp_window(self, row):
         scene_dir = row.get("scene_dir", "")
         if not scene_dir:
-            return torch.from_numpy(_default_timestamp_window(self.num_vectors, self.default_dt))
+            return torch.from_numpy(
+                _default_timestamp_window(self.num_vectors, self.default_dt)
+            )
 
         if scene_dir not in self.timestamp_cache:
             path = self.split_root / scene_dir / "sensor_timestamps.npy"
@@ -196,7 +211,9 @@ class Stage1Stage2FinetuneDataset(Dataset):
             window = _default_timestamp_window(self.num_vectors, self.default_dt)
         else:
             sensor_idx = self._sensor_idx(row)
-            window = np.asarray(timestamps[sensor_idx, : self.num_vectors], dtype=np.float32)
+            window = np.asarray(
+                timestamps[sensor_idx, : self.num_vectors], dtype=np.float32
+            )
             if window.shape[0] != self.num_vectors:
                 window = _default_timestamp_window(self.num_vectors, self.default_dt)
         return torch.from_numpy(np.array(window, dtype=np.float32, copy=True))
@@ -211,10 +228,17 @@ class Stage1Stage2FinetuneDataset(Dataset):
         else:
             motion_field = np.load(path).astype(np.float32)
         if motion_field.ndim != 3:
-            raise ValueError(f"motion field must be HWC or CHW, got {motion_field.shape}: {path}")
-        if motion_field.shape[0] <= 64 and motion_field.shape[0] < motion_field.shape[-1]:
+            raise ValueError(
+                f"motion field must be HWC or CHW, got {motion_field.shape}: {path}"
+            )
+        if (
+            motion_field.shape[0] <= 64
+            and motion_field.shape[0] < motion_field.shape[-1]
+        ):
             return torch.from_numpy(np.array(motion_field, dtype=np.float32, copy=True))
-        return torch.from_numpy(np.array(motion_field.transpose(2, 0, 1), dtype=np.float32, copy=True))
+        return torch.from_numpy(
+            np.array(motion_field.transpose(2, 0, 1), dtype=np.float32, copy=True)
+        )
 
     def _sample_meta(self, index, row, lq_path, gt_path):
         return {
@@ -256,8 +280,13 @@ class Stage1Stage2FinetuneDataset(Dataset):
                 )
             max_top = (image_h - patch_h) // self.motion_downsample
             max_left = (image_w - patch_w) // self.motion_downsample
-            top = int(torch.randint(0, max_top + 1, (1,)).item()) * self.motion_downsample
-            left = int(torch.randint(0, max_left + 1, (1,)).item()) * self.motion_downsample
+            top = (
+                int(torch.randint(0, max_top + 1, (1,)).item()) * self.motion_downsample
+            )
+            left = (
+                int(torch.randint(0, max_left + 1, (1,)).item())
+                * self.motion_downsample
+            )
             blur = blur_full[:, top : top + patch_h, left : left + patch_w]
             if sharp is not None:
                 sharp = sharp[:, top : top + patch_h, left : left + patch_w]
@@ -266,7 +295,9 @@ class Stage1Stage2FinetuneDataset(Dataset):
                 mf_left = left // self.motion_downsample
                 mf_h = patch_h // self.motion_downsample
                 mf_w = patch_w // self.motion_downsample
-                target_cmf = target_cmf[:, mf_top : mf_top + mf_h, mf_left : mf_left + mf_w]
+                target_cmf = target_cmf[
+                    :, mf_top : mf_top + mf_h, mf_left : mf_left + mf_w
+                ]
 
         sample = {
             "stage1_image": stage1_image,
@@ -285,7 +316,9 @@ class Stage1Stage2FinetuneDataset(Dataset):
         return sample
 
 
-def build_stage1_stage2_finetune_dataset(config, stage1_config, split=None, is_train=True):
+def build_stage1_stage2_finetune_dataset(
+    config, stage1_config, split=None, is_train=True
+):
     dataset_cfg = config["dataset"]
     image_cfg = stage1_config.get("image", {})
     target_cfg = stage1_config.get("target", {})
@@ -342,7 +375,9 @@ def build_stage1_stage2_finetune_loader(
         batch_size=int(loader_cfg.get("batch_size", dataset_cfg.get("batch_size", 1))),
         shuffle=is_train and sampler is None,
         sampler=sampler,
-        num_workers=int(loader_cfg.get("num_workers", dataset_cfg.get("num_workers", 0))),
+        num_workers=int(
+            loader_cfg.get("num_workers", dataset_cfg.get("num_workers", 0))
+        ),
         pin_memory=device is not None and device.type == "cuda",
         drop_last=is_train and bool(dataset_cfg.get("drop_last", False)),
     )

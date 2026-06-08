@@ -21,12 +21,20 @@ def sample_ssim(pred, target, window_size=11, eps=1e-8):
 
     mu_x = F.avg_pool2d(pred, window_size, stride=1, padding=padding)
     mu_y = F.avg_pool2d(target, window_size, stride=1, padding=padding)
-    sigma_x = F.avg_pool2d(pred * pred, window_size, stride=1, padding=padding) - mu_x * mu_x
-    sigma_y = F.avg_pool2d(target * target, window_size, stride=1, padding=padding) - mu_y * mu_y
-    sigma_xy = F.avg_pool2d(pred * target, window_size, stride=1, padding=padding) - mu_x * mu_y
+    sigma_x = (
+        F.avg_pool2d(pred * pred, window_size, stride=1, padding=padding) - mu_x * mu_x
+    )
+    sigma_y = (
+        F.avg_pool2d(target * target, window_size, stride=1, padding=padding)
+        - mu_y * mu_y
+    )
+    sigma_xy = (
+        F.avg_pool2d(pred * target, window_size, stride=1, padding=padding)
+        - mu_x * mu_y
+    )
 
-    c1 = 0.01 ** 2
-    c2 = 0.03 ** 2
+    c1 = 0.01**2
+    c2 = 0.03**2
     ssim = ((2 * mu_x * mu_y + c1) * (2 * sigma_xy + c2)) / (
         (mu_x * mu_x + mu_y * mu_y + c1) * (sigma_x + sigma_y + c2) + eps
     )

@@ -34,7 +34,9 @@ class DifferentiablePoseSolver(nn.Module):
 
         batch_size, _, height, width = flow.shape
         if depth.shape[-2:] != (height, width):
-            depth = F.interpolate(depth, size=(height, width), mode="bilinear", align_corners=False)
+            depth = F.interpolate(
+                depth, size=(height, width), mode="bilinear", align_corners=False
+            )
 
         if self.max_points > 0 and height * width > self.max_points:
             stride = int((height * width / self.max_points) ** 0.5)
@@ -65,7 +67,6 @@ class DifferentiablePoseSolver(nn.Module):
         zeros = torch.zeros_like(x)
         ones_over_z = 1.0 / z
 
-        # Unknown vector is [wx, wy, wz, tx, ty, tz].
         a_u = torch.stack(
             [
                 x * y / f,

@@ -84,15 +84,23 @@ def compute_rotation_matrix_torch(theta):
     return r_x @ r_y @ r_z
 
 
-def compute_interval_rotations_torch(gyro_window, timestamp_window, default_dt=1.0 / 240.0):
+def compute_interval_rotations_torch(
+    gyro_window, timestamp_window, default_dt=1.0 / 240.0
+):
     if gyro_window.ndim != 3 or gyro_window.shape[-1] != 3:
         raise ValueError(f"gyro_window must be BxNx3, got {tuple(gyro_window.shape)}")
     if gyro_window.shape[1] != 7:
-        raise ValueError(f"gyro_window must contain 7 vectors, got {gyro_window.shape[1]}")
+        raise ValueError(
+            f"gyro_window must contain 7 vectors, got {gyro_window.shape[1]}"
+        )
 
-    timestamp_window = timestamp_window.to(device=gyro_window.device, dtype=gyro_window.dtype)
+    timestamp_window = timestamp_window.to(
+        device=gyro_window.device, dtype=gyro_window.dtype
+    )
     if timestamp_window.ndim == 1:
-        timestamp_window = timestamp_window.unsqueeze(0).expand(gyro_window.shape[0], -1)
+        timestamp_window = timestamp_window.unsqueeze(0).expand(
+            gyro_window.shape[0], -1
+        )
     if timestamp_window.shape[1] != gyro_window.shape[1]:
         raise ValueError(
             f"timestamp_window shape must be Bx{gyro_window.shape[1]}, got {tuple(timestamp_window.shape)}"
@@ -106,7 +114,9 @@ def compute_interval_rotations_torch(gyro_window, timestamp_window, default_dt=1
     dt = torch.where(valid, dt, dt.new_full(dt.shape, float(default_dt)))
 
     theta = 0.5 * (gyro_window[:, :-1, :] + gyro_window[:, 1:, :]) * dt.unsqueeze(-1)
-    return [compute_rotation_matrix_torch(theta[:, idx, :]) for idx in range(theta.shape[1])]
+    return [
+        compute_rotation_matrix_torch(theta[:, idx, :]) for idx in range(theta.shape[1])
+    ]
 
 
 def compute_homography_torch(rotation, camera_matrix):

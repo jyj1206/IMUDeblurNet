@@ -1,6 +1,3 @@
-# Stage 2 image-only ablation config.
-# The dataset still loads CMF for minimum pipeline changes, but the model ignores it.
-
 experiment:
   name: stage2_image_only_training
   result_root: result

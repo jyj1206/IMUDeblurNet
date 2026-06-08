@@ -67,11 +67,17 @@ def save_best_metrics(run_dir, iteration, metrics):
         "count": int(metrics.get("count", 0)),
     }
     path = Path(run_dir) / "best_metrics.json"
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def distributed_world_size(distributed):
-    if distributed and torch.distributed.is_available() and torch.distributed.is_initialized():
+    if (
+        distributed
+        and torch.distributed.is_available()
+        and torch.distributed.is_initialized()
+    ):
         return torch.distributed.get_world_size()
     return 1
 
@@ -141,7 +147,9 @@ def main():
 
     model = build_model(cfg).to(device)
     if distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device.index])
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[device.index]
+        )
     criterion = build_criterion(cfg["train"].get("loss", "psnr")).to(device)
     optimizer = build_optimizer(cfg, model.parameters())
     scheduler = build_scheduler(
@@ -156,11 +164,15 @@ def main():
     history = []
     if resume_checkpoint:
         ckpt = torch_load_checkpoint(resume_checkpoint, map_location=device)
-        load_checkpoint_state(ckpt, model, optimizer, scheduler, unwrap_model, len(loader))
+        load_checkpoint_state(
+            ckpt, model, optimizer, scheduler, unwrap_model, len(loader)
+        )
         start_iteration = checkpoint_iteration(ckpt, len(loader))
         best_val_psnr = float(ckpt.get("best_val_psnr", best_val_psnr))
         history = list(ckpt.get("history", []))
-        logger.info(f"resumed_from={resume_checkpoint}, start_iteration={start_iteration}")
+        logger.info(
+            f"resumed_from={resume_checkpoint}, start_iteration={start_iteration}"
+        )
 
     train_cfg = cfg["train"]
     checkpoint_interval = int(train_cfg.get("checkpoint_interval", 1000))
@@ -207,22 +219,25 @@ def main():
 
             progress.update(1)
             recent_losses.append(float(loss.detach().cpu()))
-            if interval_due(current_iteration, log_interval) or current_iteration == total_iterations:
+            if (
+                interval_due(current_iteration, log_interval)
+                or current_iteration == total_iterations
+            ):
                 local_loss_avg = torch.tensor(
                     sum(recent_losses) / max(1, len(recent_losses)),
                     device=device,
                 )
-                loss_log = float(
-                    reduce_mean_tensor(local_loss_avg).detach().cpu()
-                )
-                loss_last_log = float(
-                    reduce_mean_tensor(loss.detach()).detach().cpu()
-                )
+                loss_log = float(reduce_mean_tensor(local_loss_avg).detach().cpu())
+                loss_last_log = float(reduce_mean_tensor(loss.detach()).detach().cpu())
                 psnr_log = float(
-                    reduce_mean_tensor(batch_psnr(pred.detach(), sharp.detach())).detach().cpu()
+                    reduce_mean_tensor(batch_psnr(pred.detach(), sharp.detach()))
+                    .detach()
+                    .cpu()
                 )
                 ssim_log = float(
-                    reduce_mean_tensor(batch_ssim(pred.detach(), sharp.detach())).detach().cpu()
+                    reduce_mean_tensor(batch_ssim(pred.detach(), sharp.detach()))
+                    .detach()
+                    .cpu()
                 )
                 lr = optimizer.param_groups[0]["lr"]
                 train_metrics = {
@@ -333,7 +348,9 @@ def main():
         )
         save_checkpoint(state, run_dir, "latest.pt")
         save_history(history, run_dir)
-        logger.info(f"finished total_iterations={current_iteration}, best_val_psnr={best_val_psnr:.4f}")
+        logger.info(
+            f"finished total_iterations={current_iteration}, best_val_psnr={best_val_psnr:.4f}"
+        )
 
     cleanup_distributed()
 

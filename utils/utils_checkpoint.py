@@ -28,17 +28,23 @@ def build_checkpoint_state(
     }
 
 
-def load_checkpoint_state(checkpoint, model, optimizer, scheduler, unwrap_fn, steps_per_epoch):
+def load_checkpoint_state(
+    checkpoint, model, optimizer, scheduler, unwrap_fn, steps_per_epoch
+):
     model_state = checkpoint.get("model") or checkpoint.get("model_state_dict")
     if model_state is None:
         raise KeyError("checkpoint does not contain model state.")
     unwrap_fn(model).load_state_dict(model_state)
 
-    optimizer_state = checkpoint.get("optimizer") or checkpoint.get("optimizer_state_dict")
+    optimizer_state = checkpoint.get("optimizer") or checkpoint.get(
+        "optimizer_state_dict"
+    )
     if optimizer_state is not None:
         optimizer.load_state_dict(optimizer_state)
 
-    scheduler_state = checkpoint.get("scheduler") or checkpoint.get("scheduler_state_dict")
+    scheduler_state = checkpoint.get("scheduler") or checkpoint.get(
+        "scheduler_state_dict"
+    )
     if scheduler is not None and scheduler_state is not None:
         scheduler.load_state_dict(scheduler_state)
 
@@ -68,7 +74,11 @@ def prepare_run_dir(config, resume=None):
                 raise FileNotFoundError(f"Missing checkpoint: {checkpoint_path}")
             return resume_path, checkpoint_path
         if resume_path.is_file():
-            run_dir = Path(output_dir) if output_dir else _new_run_dir(result_root, run_prefix)
+            run_dir = (
+                Path(output_dir)
+                if output_dir
+                else _new_run_dir(result_root, run_prefix)
+            )
             return run_dir, resume_path
         raise FileNotFoundError(f"resume must be a .pt file or run directory: {resume}")
 

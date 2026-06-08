@@ -97,7 +97,14 @@ def find_calibration_points(image_paths, board_size, square_size):
     if not imgpoints:
         raise RuntimeError("No checkerboard corners were detected. Check --board-size.")
 
-    return objpoints_standard, objpoints_fisheye, imgpoints, image_size, used_paths, skipped_paths
+    return (
+        objpoints_standard,
+        objpoints_fisheye,
+        imgpoints,
+        image_size,
+        used_paths,
+        skipped_paths,
+    )
 
 
 def calibrate_standard(objpoints, imgpoints, image_size):
@@ -169,7 +176,9 @@ def undistort_standard(image, camera_matrix, dist_coeffs, alpha):
     return cv2.undistort(image, camera_matrix, dist_coeffs, None, new_camera_matrix)
 
 
-def undistort_fisheye(image, camera_matrix, dist_coeffs, balance, fov_scale, new_camera_mode):
+def undistort_fisheye(
+    image, camera_matrix, dist_coeffs, balance, fov_scale, new_camera_mode
+):
     height, width = image.shape[:2]
     image_size = (width, height)
     if new_camera_mode == "same":
@@ -320,8 +329,18 @@ def build_parser():
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--board-size", type=parse_board_size, default=(8, 6))
     parser.add_argument("--square-size", type=float, default=1.0)
-    parser.add_argument("--alpha", type=float, default=0.0, help="Standard undistort free scaling, 0 crops black borders and 1 keeps all pixels.")
-    parser.add_argument("--balance", type=float, default=0.0, help="Fisheye balance, 0 crops black borders and 1 keeps wider FOV.")
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.0,
+        help="Standard undistort free scaling, 0 crops black borders and 1 keeps all pixels.",
+    )
+    parser.add_argument(
+        "--balance",
+        type=float,
+        default=0.0,
+        help="Fisheye balance, 0 crops black borders and 1 keeps wider FOV.",
+    )
     parser.add_argument("--fov-scale", type=float, default=1.0)
     parser.add_argument(
         "--fisheye-new-camera",
@@ -332,7 +351,9 @@ def build_parser():
     parser.add_argument("--visual-scale", type=float, default=0.5)
     parser.add_argument("--params-name", default="calibration_params.npz")
     parser.add_argument("--report-name", default="calibration_results.txt")
-    parser.add_argument("--comparison-name", default="combined_calibration_comparison.jpg")
+    parser.add_argument(
+        "--comparison-name", default="combined_calibration_comparison.jpg"
+    )
     return parser
 
 

@@ -11,9 +11,13 @@ def build_optimizer(config, parameters):
     weight_decay = float(optim_cfg.get("weight_decay", 0.0))
 
     if name == "adam":
-        return torch.optim.Adam(parameters, lr=lr, betas=betas, weight_decay=weight_decay)
+        return torch.optim.Adam(
+            parameters, lr=lr, betas=betas, weight_decay=weight_decay
+        )
     if name == "adamw":
-        return torch.optim.AdamW(parameters, lr=lr, betas=betas, weight_decay=weight_decay)
+        return torch.optim.AdamW(
+            parameters, lr=lr, betas=betas, weight_decay=weight_decay
+        )
     raise ValueError(f"Unknown optimizer.name: {name}")
 
 

@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Checkpoint,
-    [string]$IMUBlurRoot = "data\IMUBlur",
+    [string]$IMUBlurRoot = "data\IMUBlurV2",
     [string]$IMURealRoot = "data\IMURealBlur",
     [string]$Split = "test",
     [string]$OutputRoot = "runs",

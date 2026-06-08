@@ -5,3 +5,4 @@ numpy==1.26.4
 opencv-python==4.9.0.80
 PyYAML==6.0.2
 tqdm==4.67.1
+pyiqa==0.1.15.post2

@@ -78,7 +78,9 @@ def undistort_standard(image, camera_matrix, dist_coeffs, alpha, crop):
     return output
 
 
-def undistort_fisheye(image, camera_matrix, dist_coeffs, balance, fov_scale, new_camera_mode):
+def undistort_fisheye(
+    image, camera_matrix, dist_coeffs, balance, fov_scale, new_camera_mode
+):
     height, width = image.shape[:2]
     image_size = (width, height)
     dist_coeffs = dist_coeffs.reshape(4, 1)
@@ -196,7 +198,9 @@ def process_image(
             alpha,
             crop,
         )
-        output_path = output_dirs["standard"] / f"{image_path.stem}_standard{image_path.suffix}"
+        output_path = (
+            output_dirs["standard"] / f"{image_path.stem}_standard{image_path.suffix}"
+        )
         cv2.imwrite(str(output_path), standard_output)
         output_paths.append(output_path)
 
@@ -214,13 +218,19 @@ def process_image(
             fov_scale,
             fisheye_new_camera,
         )
-        output_path = output_dirs["fisheye"] / f"{image_path.stem}_fisheye{image_path.suffix}"
+        output_path = (
+            output_dirs["fisheye"] / f"{image_path.stem}_fisheye{image_path.suffix}"
+        )
         cv2.imwrite(str(output_path), fisheye_output)
         output_paths.append(output_path)
 
     if save_side_by_side and standard_output is not None and fisheye_output is not None:
-        comparison_path = output_dirs["comparison"] / f"{image_path.stem}_comparison.jpg"
-        save_comparison(image, standard_output, fisheye_output, comparison_path, visual_scale)
+        comparison_path = (
+            output_dirs["comparison"] / f"{image_path.stem}_comparison.jpg"
+        )
+        save_comparison(
+            image, standard_output, fisheye_output, comparison_path, visual_scale
+        )
         output_paths.append(comparison_path)
 
     return output_paths
@@ -238,8 +248,18 @@ def build_parser():
         choices=("standard", "fisheye", "both"),
         default="both",
     )
-    parser.add_argument("--alpha", type=float, default=0.0, help="Standard model free scaling, 0 reduces black borders and 1 keeps all pixels.")
-    parser.add_argument("--balance", type=float, default=0.0, help="Fisheye balance, 0 crops black borders and 1 keeps wider FOV.")
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.0,
+        help="Standard model free scaling, 0 reduces black borders and 1 keeps all pixels.",
+    )
+    parser.add_argument(
+        "--balance",
+        type=float,
+        default=0.0,
+        help="Fisheye balance, 0 crops black borders and 1 keeps wider FOV.",
+    )
     parser.add_argument("--fov-scale", type=float, default=1.0)
     parser.add_argument(
         "--fisheye-new-camera",
@@ -247,7 +267,9 @@ def build_parser():
         default="same",
         help="Use original K for fisheye undistort, or estimate a new K from balance/fov-scale.",
     )
-    parser.add_argument("--crop", action="store_true", help="Crop standard model output to valid ROI.")
+    parser.add_argument(
+        "--crop", action="store_true", help="Crop standard model output to valid ROI."
+    )
     parser.add_argument("--no-comparison", action="store_true")
     parser.add_argument("--visual-scale", type=float, default=0.35)
     return parser

@@ -5,7 +5,9 @@ import torch
 
 def _distributed_options(config):
     if isinstance(config, dict):
-        return bool(config.get("enabled", False)), str(config.get("backend", "auto")).lower()
+        return bool(config.get("enabled", False)), str(
+            config.get("backend", "auto")
+        ).lower()
     return bool(config), "auto"
 
 

@@ -150,10 +150,7 @@ def random_crop_tensors(tensors, patch_size):
 
     top = int(torch.randint(0, image_h - patch_h + 1, (1,)).item())
     left = int(torch.randint(0, image_w - patch_w + 1, (1,)).item())
-    return [
-        tensor[:, top : top + patch_h, left : left + patch_w]
-        for tensor in tensors
-    ]
+    return [tensor[:, top : top + patch_h, left : left + patch_w] for tensor in tensors]
 
 
 def sensor_parts(sensor):

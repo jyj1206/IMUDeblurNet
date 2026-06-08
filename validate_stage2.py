@@ -27,11 +27,17 @@ from utils.utils_eval import (
 )
 from utils.utils_iqa import Stage2IqaMetrics, normalize_iqa_metric_names
 from utils.utils_metrics import sample_psnr, sample_ssim
-from utils.utils_visualization import make_stage2_comparison, tensor_to_rgb_uint8, write_image
+from utils.utils_visualization import (
+    make_stage2_comparison,
+    tensor_to_rgb_uint8,
+    write_image,
+)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Stage2 deblur validation with PSNR/SSIM by type.")
+    parser = argparse.ArgumentParser(
+        description="Stage2 deblur validation with PSNR/SSIM by type."
+    )
     parser.add_argument("--config", default=None)
     parser.add_argument("--checkpoint", default=None)
     parser.add_argument("--dataset-root", default=None)
@@ -44,7 +50,7 @@ def parse_args():
     parser.add_argument("--output-root", default="runs")
     parser.add_argument("--max-batches", type=int, default=None)
     parser.add_argument("--save-limit", type=int, default=None)
-    parser.add_argument("--batch-size", type=int, default=None)
+    parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--num-workers", type=int, default=None)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--non-strict", action="store_true")
@@ -108,21 +114,32 @@ def main():
     has_gt = bool(getattr(dataset, "has_gt", True))
     loader = DataLoader(
         dataset,
-        batch_size=int(args.batch_size or val_cfg.get("batch_size", cfg["dataset"].get("batch_size", 1))),
+        batch_size=int(
+            args.batch_size
+            or val_cfg.get("batch_size", cfg["dataset"].get("batch_size", 1))
+        ),
         shuffle=False,
-        num_workers=int(args.num_workers if args.num_workers is not None else val_cfg.get("num_workers", 0)),
+        num_workers=int(
+            args.num_workers
+            if args.num_workers is not None
+            else val_cfg.get("num_workers", 0)
+        ),
         pin_memory=device.type == "cuda",
     )
 
     model = build_model(cfg).to(device).eval()
-    load_report = load_model_weights(model, args.checkpoint, device=device, strict=not args.non_strict)
+    load_report = load_model_weights(
+        model, args.checkpoint, device=device, strict=not args.non_strict
+    )
     criterion = build_criterion(cfg.get("train", {}).get("loss", "psnr")).to(device)
     extra_metric_names = normalize_iqa_metric_names(
         args.extra_metrics,
         realblur_preset=args.realblur_metrics,
         has_target=has_gt,
     )
-    iqa_metrics = Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
+    iqa_metrics = (
+        Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
+    )
     reference_metric_names = ["loss", "psnr", "ssim"] if has_gt else []
     metric_names = [*reference_metric_names, *extra_metric_names]
     overall = MetricAverager(metric_names)
@@ -153,7 +170,9 @@ def main():
                 mse = ((pred_raw - sharp) ** 2).flatten(1).mean(dim=1)
                 loss_values = (10.0 * torch.log10(mse + 1e-8)).detach().cpu()
             else:
-                loss_values = ((pred_raw - sharp).abs().flatten(1).mean(dim=1)).detach().cpu()
+                loss_values = (
+                    ((pred_raw - sharp).abs().flatten(1).mean(dim=1)).detach().cpu()
+                )
         else:
             loss_values = None
 
@@ -197,7 +216,9 @@ def main():
                 )
                 output_rgb = tensor_to_rgb_uint8(pred[idx].detach().cpu())
                 write_image(visual_dir / f"{name}.png", visual)
-                write_image(output_dir / f"{name}_deblur.png", output_rgb[:, :, ::-1].copy())
+                write_image(
+                    output_dir / f"{name}_deblur.png", output_rgb[:, :, ::-1].copy()
+                )
                 saved += 1
 
         progress.set_postfix(overall.as_dict())
@@ -219,7 +240,9 @@ def main():
         "saved_visuals": saved,
     }
     save_json(run_dir / "metrics.json", metrics)
-    save_csv(run_dir / "samples.csv", sample_rows, ["index", "type", "stem", *metric_names])
+    save_csv(
+        run_dir / "samples.csv", sample_rows, ["index", "type", "stem", *metric_names]
+    )
     print(f"saved: {run_dir}")
     print(metrics["overall"])
     print(metrics["by_type"])

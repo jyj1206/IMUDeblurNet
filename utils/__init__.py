@@ -5,7 +5,11 @@ from .utils_checkpoint import (
     prepare_run_dir,
     save_checkpoint,
 )
-from .utils_config import configure_stage2_motion_loading, normalize_config, stage2_uses_motion
+from .utils_config import (
+    configure_stage2_motion_loading,
+    normalize_config,
+    stage2_uses_motion,
+)
 from .utils_dist import (
     cleanup_distributed,
     init_distributed,
@@ -29,7 +33,14 @@ from .utils_loss import (
     timestamp_deltas,
 )
 from .utils_logger import build_logger
-from .utils_metrics import batch_psnr, batch_ssim, evaluate_model, sample_psnr, sample_ssim, stage2_forward
+from .utils_metrics import (
+    batch_psnr,
+    batch_ssim,
+    evaluate_model,
+    sample_psnr,
+    sample_ssim,
+    stage2_forward,
+)
 from .utils_optim import build_optimizer, build_scheduler
 from .utils_plot import append_history, save_history
 from .utils_train import interval_due, resolve_training_length, set_seed

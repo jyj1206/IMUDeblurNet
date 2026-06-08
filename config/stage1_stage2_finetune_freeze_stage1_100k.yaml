@@ -1,6 +1,3 @@
-# Stage1 frozen, Stage2-only fine-tuning with longer cosine schedule.
-# Use this to check whether the 50k plateau was just too short.
-
 experiment:
   name: stage1_stage2_finetune_freeze_stage1_100k
   result_root: result

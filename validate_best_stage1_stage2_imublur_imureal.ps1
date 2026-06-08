@@ -1,7 +1,7 @@
 param(
-    [string]$Stage1Checkpoint = "weights\best_stage1.pt",
-    [string]$Stage2Checkpoint = "weights\best_stage2.pt",
-    [string]$IMUBlurRoot = "data\IMUBlur",
+    [string]$Stage1Checkpoint = "weights\best_stage1_V2.pt",
+    [string]$Stage2Checkpoint = "weights\best_stage2_V2.pt",
+    [string]$IMUBlurRoot = "data\IMUBlurV2",
     [string]$IMURealRoot = "data\IMURealBlur",
     [string]$Split = "test",
     [string]$OutputRoot = "runs",

@@ -1,6 +1,3 @@
-# Stage1 frozen, Stage2-only fine-tuning with larger restoration patches.
-# Use this to test whether more spatial context helps deblurring.
-
 experiment:
   name: stage1_stage2_finetune_freeze_stage1_patch384_lr2e-6_50k
   result_root: result

@@ -80,7 +80,9 @@ class Stage1Stage2Dataset(Dataset):
         self.vector_dim = int(vector_dim)
         self.load_target_gyro = bool(load_target_gyro)
         self.default_dt = float(default_dt)
-        self.motion_field_root = Path(motion_field_root) if motion_field_root else self.dataset_root
+        self.motion_field_root = (
+            Path(motion_field_root) if motion_field_root else self.dataset_root
+        )
         self.motion_field_dir = motion_field_dir
         self.motion_field_ext = motion_field_ext
         self.allow_missing_gt = bool(allow_missing_gt)
@@ -133,9 +135,17 @@ class Stage1Stage2Dataset(Dataset):
 
     def _motion_field_path(self, row):
         scene_dir = row.get("scene_dir", "")
-        blur_path = row["blur_path"] if self.layout == "paired" else row["center_blur_path"]
+        blur_path = (
+            row["blur_path"] if self.layout == "paired" else row["center_blur_path"]
+        )
         motion_name = f"{Path(blur_path).stem}.{self.motion_field_ext}"
-        return self.motion_field_root / self.split / self.motion_field_dir / scene_dir / motion_name
+        return (
+            self.motion_field_root
+            / self.split
+            / self.motion_field_dir
+            / scene_dir
+            / motion_name
+        )
 
     def _sensor_idx(self, row):
         return int(row.get("sensor_idx") or row.get("center_sensor_idx") or 0)
@@ -156,7 +166,7 @@ class Stage1Stage2Dataset(Dataset):
         sensor_idx = self._sensor_idx(row)
         end = self.vector_start + self.vector_dim
         target_gyro = np.asarray(
-            sensor_windows[sensor_idx, : self.num_vectors, self.vector_start:end],
+            sensor_windows[sensor_idx, : self.num_vectors, self.vector_start : end],
             dtype=np.float32,
         )
         if target_gyro.shape != (self.num_vectors, self.vector_dim):
@@ -169,7 +179,9 @@ class Stage1Stage2Dataset(Dataset):
     def _load_timestamp_window(self, row):
         scene_dir = row.get("scene_dir", "")
         if not scene_dir:
-            return torch.from_numpy(_default_timestamp_window(self.num_vectors, self.default_dt))
+            return torch.from_numpy(
+                _default_timestamp_window(self.num_vectors, self.default_dt)
+            )
 
         if scene_dir not in self.timestamp_cache:
             path = self.split_root / scene_dir / "sensor_timestamps.npy"
@@ -182,7 +194,9 @@ class Stage1Stage2Dataset(Dataset):
             window = _default_timestamp_window(self.num_vectors, self.default_dt)
         else:
             sensor_idx = self._sensor_idx(row)
-            window = np.asarray(timestamps[sensor_idx, : self.num_vectors], dtype=np.float32)
+            window = np.asarray(
+                timestamps[sensor_idx, : self.num_vectors], dtype=np.float32
+            )
             if window.shape[0] != self.num_vectors:
                 window = _default_timestamp_window(self.num_vectors, self.default_dt)
         return torch.from_numpy(np.array(window, dtype=np.float32, copy=True))
@@ -238,7 +252,9 @@ def build_stage1_stage2_dataset(
     target_cfg = stage1_config.get("target", {})
     return Stage1Stage2Dataset(
         dataset_root=dataset_cfg["root"],
-        split=split or stage2_config.get("validation", {}).get("split") or dataset_cfg.get("split", "val"),
+        split=split
+        or stage2_config.get("validation", {}).get("split")
+        or dataset_cfg.get("split", "val"),
         metadata_name=dataset_cfg.get("metadata_name", "metadata.csv"),
         stage1_image_size=image_cfg.get("size", (224, 320)),
         stage1_mean=image_cfg.get("mean"),
@@ -276,9 +292,13 @@ def build_stage1_stage2_loader(
     )
     loader = DataLoader(
         dataset,
-        batch_size=int(batch_size or val_cfg.get("batch_size", dataset_cfg.get("batch_size", 1))),
+        batch_size=int(
+            batch_size or val_cfg.get("batch_size", dataset_cfg.get("batch_size", 1))
+        ),
         shuffle=False,
-        num_workers=int(num_workers if num_workers is not None else val_cfg.get("num_workers", 0)),
+        num_workers=int(
+            num_workers if num_workers is not None else val_cfg.get("num_workers", 0)
+        ),
         pin_memory=device is not None and device.type == "cuda",
     )
     return dataset, loader

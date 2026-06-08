@@ -15,7 +15,8 @@ def os_relpath(path, start):
 
 def image_files(directory):
     return sorted(
-        path for path in Path(directory).iterdir()
+        path
+        for path in Path(directory).iterdir()
         if path.is_file() and path.suffix.lower() in IMAGE_EXTS
     )
 
@@ -35,7 +36,9 @@ def copy_pair(src_blur, src_sharp, dst_scene, blur_path, sharp_path):
     shutil.copy2(src_sharp, dst_sharp)
 
 
-def row_for_pair(split_root, source_scene, src_blur, src_sharp, dataset_type, storage, scene_name):
+def row_for_pair(
+    split_root, source_scene, src_blur, src_sharp, dataset_type, storage, scene_name
+):
     if storage == "metadata":
         scene_dir = os_relpath(source_scene, split_root)
         blur_path = os_relpath(src_blur, source_scene)
@@ -100,7 +103,9 @@ def collect_realblur_rows(source_root, output_root, split, storage, list_file):
             src_sharp = source_root / sharp_rel
             src_blur = source_root / blur_rel
             if not src_blur.exists() or not src_sharp.exists():
-                raise FileNotFoundError(f"Missing RealBlur pair: {src_blur}, {src_sharp}")
+                raise FileNotFoundError(
+                    f"Missing RealBlur pair: {src_blur}, {src_sharp}"
+                )
             source_scene = src_blur.parents[1]
             scene_name = source_scene.name
             row = row_for_pair(
@@ -121,8 +126,7 @@ def collect_realblur_rows(source_root, output_root, split, storage, list_file):
         if not blur_dir.exists() or not sharp_dir.exists():
             continue
         sharp_by_index = {
-            path.stem.removeprefix("gt_"): path
-            for path in image_files(sharp_dir)
+            path.stem.removeprefix("gt_"): path for path in image_files(sharp_dir)
         }
         for blur_path in image_files(blur_dir):
             key = blur_path.stem.removeprefix("blur_")

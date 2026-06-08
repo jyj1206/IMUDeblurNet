@@ -34,7 +34,9 @@ class Stage2MotionFieldDataset(Dataset):
         self.dataset_root = Path(dataset_root)
         self.split = resolve_split_name(self.dataset_root, split)
         self.patch_size = patch_size if self.split == "train" else None
-        self.motion_field_root = Path(motion_field_root) if motion_field_root else self.dataset_root
+        self.motion_field_root = (
+            Path(motion_field_root) if motion_field_root else self.dataset_root
+        )
         self.motion_field_dir = motion_field_dir
         self.motion_field_ext = motion_field_ext
         self.motion_downsample = int(motion_downsample)
@@ -92,9 +94,17 @@ class Stage2MotionFieldDataset(Dataset):
 
     def _motion_field_path(self, row):
         scene_dir = row.get("scene_dir", "")
-        blur_path = row["blur_path"] if self.layout == "paired" else row["center_blur_path"]
+        blur_path = (
+            row["blur_path"] if self.layout == "paired" else row["center_blur_path"]
+        )
         motion_name = f"{Path(blur_path).stem}.{self.motion_field_ext}"
-        return self.motion_field_root / self.split / self.motion_field_dir / scene_dir / motion_name
+        return (
+            self.motion_field_root
+            / self.split
+            / self.motion_field_dir
+            / scene_dir
+            / motion_name
+        )
 
     def _sample_meta(self, index, row, lq_path, gt_path):
         motion_path = self._motion_field_path(row)
@@ -119,8 +129,13 @@ class Stage2MotionFieldDataset(Dataset):
         else:
             motion_field = np.load(path).astype(np.float32)
         if motion_field.ndim != 3:
-            raise ValueError(f"motion field must be HWC or CHW, got {motion_field.shape}")
-        if motion_field.shape[0] <= 32 and motion_field.shape[0] < motion_field.shape[-1]:
+            raise ValueError(
+                f"motion field must be HWC or CHW, got {motion_field.shape}"
+            )
+        if (
+            motion_field.shape[0] <= 32
+            and motion_field.shape[0] < motion_field.shape[-1]
+        ):
             return torch.from_numpy(np.ascontiguousarray(motion_field))
         return torch.from_numpy(np.ascontiguousarray(motion_field.transpose(2, 0, 1)))
 
@@ -184,7 +199,9 @@ def build_stage2_dataset(config, split=None):
     )
 
 
-def build_stage2_loader(config, split=None, distributed=False, device=None, is_train=True):
+def build_stage2_loader(
+    config, split=None, distributed=False, device=None, is_train=True
+):
     data_cfg = config["dataset"]
     loader_cfg = data_cfg if is_train else {**data_cfg, **config.get("validation", {})}
     dataset = build_stage2_dataset(config, split=split or loader_cfg.get("split"))

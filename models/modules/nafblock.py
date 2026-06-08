@@ -86,8 +86,12 @@ class NAFBlock(nn.Module):
         self.norm1 = LayerNorm2d(channels)
         self.norm2 = LayerNorm2d(channels)
 
-        self.dropout1 = nn.Dropout(drop_out_rate) if drop_out_rate > 0 else nn.Identity()
-        self.dropout2 = nn.Dropout(drop_out_rate) if drop_out_rate > 0 else nn.Identity()
+        self.dropout1 = (
+            nn.Dropout(drop_out_rate) if drop_out_rate > 0 else nn.Identity()
+        )
+        self.dropout2 = (
+            nn.Dropout(drop_out_rate) if drop_out_rate > 0 else nn.Identity()
+        )
 
         self.beta = nn.Parameter(torch.zeros((1, channels, 1, 1)), requires_grad=True)
         self.gamma = nn.Parameter(torch.zeros((1, channels, 1, 1)), requires_grad=True)

@@ -1,6 +1,3 @@
-# Stage1 frozen, Stage2-only PSNR fine-tuning without loading target CMF.
-# Patch size stays at 256; this removes unnecessary CMF target I/O for image-only training.
-
 experiment:
   name: stage1_stage2_finetune_freeze_stage1_fast_no_cmf_target_lr2e-6_50k
   result_root: result

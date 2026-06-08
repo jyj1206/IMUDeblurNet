@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Union
 
 import torch
 from torch import nn
@@ -15,7 +15,14 @@ class DWConv(nn.Module):
 
 
 class Mlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.0):
+    def __init__(
+        self,
+        in_features,
+        hidden_features=None,
+        out_features=None,
+        act_layer=nn.GELU,
+        drop=0.0,
+    ):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
@@ -39,10 +46,14 @@ class StemConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.proj = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels // 2, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(
+                in_channels, out_channels // 2, kernel_size=3, stride=2, padding=1
+            ),
             nn.BatchNorm2d(out_channels // 2),
             nn.GELU(),
-            nn.Conv2d(out_channels // 2, out_channels, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(
+                out_channels // 2, out_channels, kernel_size=3, stride=2, padding=1
+            ),
             nn.BatchNorm2d(out_channels),
         )
 
@@ -93,9 +104,13 @@ class SpatialAttention(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, dim, mlp_ratio=4.0, drop=0.0, act_layer=nn.GELU, activation_clip=None):
+    def __init__(
+        self, dim, mlp_ratio=4.0, drop=0.0, act_layer=nn.GELU, activation_clip=None
+    ):
         super().__init__()
-        self.activation_clip = None if activation_clip is None else float(activation_clip)
+        self.activation_clip = (
+            None if activation_clip is None else float(activation_clip)
+        )
         self.norm1 = nn.BatchNorm2d(dim)
         self.attn = SpatialAttention(dim)
         self.drop_path = nn.Identity()
@@ -118,14 +133,20 @@ class Block(nn.Module):
         if self.activation_clip is None or self.activation_clip <= 0:
             return x
         clip = self.activation_clip
-        return torch.nan_to_num(x, nan=0.0, posinf=clip, neginf=-clip).clamp(-clip, clip)
+        return torch.nan_to_num(x, nan=0.0, posinf=clip, neginf=-clip).clamp(
+            -clip, clip
+        )
 
     def forward(self, x, height, width):
         batch, tokens, channels = x.shape
         x = x.permute(0, 2, 1).view(batch, channels, height, width)
-        x = x + self.drop_path(self.layer_scale_1[:, None, None] * self.attn(self.norm1(x)))
+        x = x + self.drop_path(
+            self.layer_scale_1[:, None, None] * self.attn(self.norm1(x))
+        )
         x = self._stabilize(x)
-        x = x + self.drop_path(self.layer_scale_2[:, None, None] * self.mlp(self.norm2(x)))
+        x = x + self.drop_path(
+            self.layer_scale_2[:, None, None] * self.mlp(self.norm2(x))
+        )
         x = self._stabilize(x)
         return x.view(batch, channels, tokens).permute(0, 2, 1)
 
@@ -173,7 +194,9 @@ class MSCAN(nn.Module):
         self.activation_clip = activation_clip
 
         if not (len(self.embed_dims) == len(self.mlp_ratios) == len(self.depths)):
-            raise ValueError("embed_dims, mlp_ratios, and depths must have the same length.")
+            raise ValueError(
+                "embed_dims, mlp_ratios, and depths must have the same length."
+            )
 
         for idx in range(self.num_stages):
             if idx == 0:

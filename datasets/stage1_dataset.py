@@ -96,7 +96,9 @@ class Stage1Dataset(Dataset):
             return "paired"
         if "center_blur_path" in columns:
             return "triplet_center_fallback"
-        raise ValueError(f"{self.metadata_path} must contain blur_path or center_blur_path.")
+        raise ValueError(
+            f"{self.metadata_path} must contain blur_path or center_blur_path."
+        )
 
     def _blur_path(self, row):
         root = scene_root(self.split_root, row)
@@ -123,7 +125,7 @@ class Stage1Dataset(Dataset):
         sensor_idx = self._sensor_idx(row)
         end = self.vector_start + self.vector_dim
         gyro = np.asarray(
-            sensor_windows[sensor_idx, : self.num_vectors, self.vector_start:end],
+            sensor_windows[sensor_idx, : self.num_vectors, self.vector_start : end],
             dtype=np.float32,
         )
         if gyro.shape != (self.num_vectors, self.vector_dim):
@@ -140,14 +142,18 @@ class Stage1Dataset(Dataset):
 
         if scene_dir not in self.timestamp_cache:
             path = self.split_root / scene_dir / "sensor_timestamps.npy"
-            self.timestamp_cache[scene_dir] = np.load(path, mmap_mode="r") if path.exists() else None
+            self.timestamp_cache[scene_dir] = (
+                np.load(path, mmap_mode="r") if path.exists() else None
+            )
 
         timestamps = self.timestamp_cache[scene_dir]
         if timestamps is None:
             window = _default_timestamp_window(self.num_vectors, self.default_dt)
         else:
             sensor_idx = self._sensor_idx(row)
-            window = np.asarray(timestamps[sensor_idx, : self.num_vectors], dtype=np.float32)
+            window = np.asarray(
+                timestamps[sensor_idx, : self.num_vectors], dtype=np.float32
+            )
             if window.shape[0] != self.num_vectors:
                 window = _default_timestamp_window(self.num_vectors, self.default_dt)
         return torch.from_numpy(np.array(window, dtype=np.float32, copy=True))
@@ -188,7 +194,9 @@ class Stage1Dataset(Dataset):
             "image": image,
             "gyro": self._load_gyro_window(row),
             "timestamp_window": self._load_timestamp_window(row),
-            "focal_length": torch.tensor(self._scaled_focal_length(), dtype=torch.float32),
+            "focal_length": torch.tensor(
+                self._scaled_focal_length(), dtype=torch.float32
+            ),
             "meta": self._sample_meta(index, row, image_path),
         }
         return sample
@@ -214,9 +222,13 @@ def build_stage1_dataset(config, split=None):
     )
 
 
-def build_stage1_loader(config, split=None, distributed=False, device=None, is_train=True):
+def build_stage1_loader(
+    config, split=None, distributed=False, device=None, is_train=True
+):
     dataset_cfg = config["dataset"]
-    loader_cfg = dataset_cfg if is_train else {**dataset_cfg, **config.get("validation", {})}
+    loader_cfg = (
+        dataset_cfg if is_train else {**dataset_cfg, **config.get("validation", {})}
+    )
     dataset = build_stage1_dataset(config, split=split or loader_cfg.get("split"))
     sampler = (
         torch.utils.data.distributed.DistributedSampler(dataset, shuffle=is_train)
@@ -228,7 +240,9 @@ def build_stage1_loader(config, split=None, distributed=False, device=None, is_t
         batch_size=int(loader_cfg.get("batch_size", dataset_cfg.get("batch_size", 8))),
         shuffle=is_train and sampler is None,
         sampler=sampler,
-        num_workers=int(loader_cfg.get("num_workers", dataset_cfg.get("num_workers", 0))),
+        num_workers=int(
+            loader_cfg.get("num_workers", dataset_cfg.get("num_workers", 0))
+        ),
         pin_memory=device is not None and device.type == "cuda",
         drop_last=is_train and bool(dataset_cfg.get("drop_last", False)),
     )

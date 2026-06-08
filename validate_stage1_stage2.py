@@ -39,7 +39,9 @@ from utils.utils_visualization import (
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="End-to-end validation: B -> gyro, gyro -> CMF, B + CMF -> S.")
+    parser = argparse.ArgumentParser(
+        description="End-to-end validation: B -> gyro, gyro -> CMF, B + CMF -> S."
+    )
     parser.add_argument("--stage1-config", default=None)
     parser.add_argument("--stage1-checkpoint", default=None)
     parser.add_argument("--stage2-config", default=None)
@@ -108,16 +110,22 @@ def load_motion_field(path):
     else:
         motion_field = np.load(path).astype(np.float32)
     if motion_field.ndim != 3:
-        raise ValueError(f"motion field must be HWC or CHW, got {motion_field.shape}: {path}")
+        raise ValueError(
+            f"motion field must be HWC or CHW, got {motion_field.shape}: {path}"
+        )
     if motion_field.shape[0] <= 64 and motion_field.shape[0] < motion_field.shape[-1]:
         return torch.from_numpy(np.array(motion_field, dtype=np.float32, copy=True))
-    return torch.from_numpy(np.array(motion_field.transpose(2, 0, 1), dtype=np.float32, copy=True))
+    return torch.from_numpy(
+        np.array(motion_field.transpose(2, 0, 1), dtype=np.float32, copy=True)
+    )
 
 
 def tensor_finite_summary(value):
     if value is None:
         return {"finite": True, "nan": 0, "inf": 0, "total": 0}
-    tensor = value.detach() if isinstance(value, torch.Tensor) else torch.as_tensor(value)
+    tensor = (
+        value.detach() if isinstance(value, torch.Tensor) else torch.as_tensor(value)
+    )
     total = int(tensor.numel())
     nan = int(torch.isnan(tensor).sum().item()) if tensor.is_floating_point() else 0
     inf = int(torch.isinf(tensor).sum().item()) if tensor.is_floating_point() else 0
@@ -204,7 +212,9 @@ def main():
         realblur_preset=args.realblur_metrics,
         has_target=has_gt,
     )
-    iqa_metrics = Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
+    iqa_metrics = (
+        Stage2IqaMetrics(extra_metric_names, device) if extra_metric_names else None
+    )
     metric_names = ["loss", "psnr", "ssim"] if has_gt else []
     if load_target_gyro:
         metric_names.extend(["gyro_mae", "gyro_rmse"])
@@ -262,7 +272,9 @@ def main():
         )
         if load_target_gyro:
             gyro_mae_values = (pred_gyro - target_gyro).abs().flatten(1).mean(dim=1)
-            gyro_rmse_values = torch.sqrt(((pred_gyro - target_gyro) ** 2).flatten(1).mean(dim=1))
+            gyro_rmse_values = torch.sqrt(
+                ((pred_gyro - target_gyro) ** 2).flatten(1).mean(dim=1)
+            )
 
         batch_size = pred.shape[0]
         stems = batch_meta_list(batch, "stem", batch_size, "sample")
@@ -274,7 +286,9 @@ def main():
         for idx in range(batch_size):
             finite_summaries = {
                 "pred_gyro": tensor_finite_summary(pred_gyro[idx]),
-                "target_gyro": tensor_finite_summary(target_gyro[idx] if load_target_gyro else None),
+                "target_gyro": tensor_finite_summary(
+                    target_gyro[idx] if load_target_gyro else None
+                ),
                 "pred_cmf": tensor_finite_summary(cmf[idx]),
                 "pred_image": tensor_finite_summary(pred_cpu[idx]),
             }
@@ -330,7 +344,11 @@ def main():
                 )
                 cmf_compare_visual = None
                 cmf_compare_path = None
-                target_cmf = load_motion_field(motion_field_paths[idx]) if load_target_gyro else None
+                target_cmf = (
+                    load_motion_field(motion_field_paths[idx])
+                    if load_target_gyro
+                    else None
+                )
                 if target_cmf is not None:
                     cmf_compare_visual, cmf_metrics = make_cmf_comparison(
                         batch["lq"][idx],
@@ -365,7 +383,9 @@ def main():
                     {
                         "gyro_visual_path": str(gyro_visual_path),
                         "cmf_visual_path": str(cmf_visual_path),
-                        "cmf_compare_visual_path": "" if cmf_compare_path is None else str(cmf_compare_path),
+                        "cmf_compare_visual_path": ""
+                        if cmf_compare_path is None
+                        else str(cmf_compare_path),
                         "stage2_visual_path": str(stage2_visual_path),
                         "output_path": str(output_path),
                     }
@@ -404,10 +424,14 @@ def main():
         {
             "overall": overall.as_dict(),
             "by_type": by_type.as_dict(),
-            "stage1_config": str(Path(args.stage1_config)) if args.stage1_config else None,
+            "stage1_config": str(Path(args.stage1_config))
+            if args.stage1_config
+            else None,
             "stage1_config_source": stage1_config_source,
             "stage1_checkpoint": args.stage1_checkpoint,
-            "stage2_config": str(Path(args.stage2_config)) if args.stage2_config else None,
+            "stage2_config": str(Path(args.stage2_config))
+            if args.stage2_config
+            else None,
             "stage2_config_source": stage2_config_source,
             "stage2_checkpoint": args.stage2_checkpoint,
             "dataset_root": stage2_cfg.get("dataset", {}).get("root"),

@@ -3,8 +3,10 @@ import math
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 from tqdm import tqdm
 
+from datasets.image_dataset_common import load_image
 from datasets import build_stage1_stage2_loader
 from utils import (
     apply_dataset_overrides,
@@ -35,12 +37,22 @@ from utils.utils_visualization import (
 )
 
 
+IMAGE_EXTS = {".bmp", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
+
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="End-to-end inference: B -> gyro, gyro -> CMF, B + CMF -> S.")
+    parser = argparse.ArgumentParser(
+        description="End-to-end inference: B -> gyro, gyro -> CMF, B + CMF -> S."
+    )
     parser.add_argument("--stage1-config", default=None)
     parser.add_argument("--stage1-checkpoint", default=None)
     parser.add_argument("--stage2-config", default=None)
     parser.add_argument("--stage2-checkpoint", default=None)
+    parser.add_argument(
+        "--input",
+        default=None,
+        help="Optional image file or directory for direct image inference.",
+    )
     parser.add_argument("--dataset-root", default=None)
     parser.add_argument("--metadata-name", default=None)
     parser.add_argument("--motion-downsample", type=int, default=None)
@@ -58,6 +70,54 @@ def parse_args():
     parser.add_argument("--non-strict-stage1", action="store_true")
     parser.add_argument("--non-strict-stage2", action="store_true")
     return parser.parse_args()
+
+
+def _as_hw(image_size):
+    if image_size is None:
+        return None
+    if isinstance(image_size, int):
+        return int(image_size), int(image_size)
+    return int(image_size[0]), int(image_size[1])
+
+
+def _resize_image(image, image_size):
+    hw = _as_hw(image_size)
+    if hw is None:
+        return image
+    return F.interpolate(
+        image.unsqueeze(0), size=hw, mode="bilinear", align_corners=False
+    ).squeeze(0)
+
+
+def _normalize_image(image, mean, std):
+    if mean is None or std is None:
+        return image
+    mean_t = torch.tensor(mean, dtype=image.dtype).view(-1, 1, 1)
+    std_t = torch.tensor(std, dtype=image.dtype).view(-1, 1, 1)
+    return (image - mean_t) / std_t
+
+
+def _image_paths(input_path, limit=None):
+    input_path = Path(input_path)
+    if input_path.is_file():
+        paths = [input_path]
+    elif input_path.is_dir():
+        paths = sorted(
+            path for path in input_path.iterdir() if path.suffix.lower() in IMAGE_EXTS
+        )
+    else:
+        raise FileNotFoundError(f"Missing input image or directory: {input_path}")
+    if limit is not None:
+        paths = paths[: int(limit)]
+    if not paths:
+        raise FileNotFoundError(f"No image files found: {input_path}")
+    return paths
+
+
+def _timestamp_window(num_vectors, default_dt):
+    return torch.arange(int(num_vectors), dtype=torch.float32).unsqueeze(0) * float(
+        default_dt
+    )
 
 
 @torch.no_grad()
@@ -97,6 +157,128 @@ def main():
     stage2_visual_dir = visual_dir / "stage2"
     output_dir = run_dir / "outputs"
 
+    stage1_model, stage2_model, load_report = load_stage1_stage2_models(
+        stage1_cfg,
+        stage2_cfg,
+        args.stage1_checkpoint,
+        args.stage2_checkpoint,
+        device=device,
+        strict_stage1=not args.non_strict_stage1,
+        strict_stage2=not args.non_strict_stage2,
+    )
+
+    if args.input:
+        image_cfg = stage1_cfg.get("image", {})
+        target_cfg = stage1_cfg.get("target", {})
+        paths = _image_paths(args.input, limit=args.limit)
+        rows = []
+        for index, image_path in enumerate(
+            tqdm(paths, desc="stage1->stage2 image inference")
+        ):
+            blur = load_image(image_path)
+            stage1_image = _normalize_image(
+                _resize_image(blur, image_cfg.get("size", (224, 320))),
+                image_cfg.get("mean"),
+                image_cfg.get("std"),
+            )
+            batch = {
+                "stage1_image": stage1_image.unsqueeze(0),
+                "lq": blur.unsqueeze(0),
+                "timestamp_window": _timestamp_window(
+                    target_cfg.get("num_vectors", 7),
+                    args.default_dt,
+                ),
+            }
+            result = run_stage1_stage2_batch(
+                stage1_model,
+                stage2_model,
+                batch,
+                stage2_cfg,
+                device,
+                default_dt=args.default_dt,
+                camera_matrix=camera_matrix,
+            )
+            pred = result["pred"][0].detach().cpu()
+            pred_gyro = result["pred_gyro"][0].detach().cpu()
+            cmf = result["cmf"][0].detach().cpu()
+            name = safe_name(f"{index:06d}", image_path.stem)
+            gyro_visual_path = gyro_visual_dir / f"{name}.png"
+            cmf_visual_path = cmf_visual_dir / f"{name}.png"
+            stage2_visual_path = stage2_visual_dir / f"{name}.png"
+            output_path = output_dir / f"{name}_deblur.png"
+            write_image(
+                gyro_visual_path,
+                make_stage1_gyro_visualization(
+                    stage1_image,
+                    pred_gyro,
+                    title=f"B -> gyro | {image_path.name}",
+                    mean=image_cfg.get("mean"),
+                    std=image_cfg.get("std"),
+                ),
+            )
+            write_image(
+                cmf_visual_path,
+                make_cmf_visualization(
+                    blur, cmf, title=f"gyro -> CMF | {image_path.name}"
+                ),
+            )
+            write_image(
+                stage2_visual_path,
+                make_stage2_comparison(
+                    blur, pred, title=f"B + CMF -> S | {image_path.name}"
+                ),
+            )
+            output_rgb = tensor_to_rgb_uint8(pred)
+            write_image(output_path, output_rgb[:, :, ::-1].copy())
+            row = {
+                "index": index,
+                "input_path": str(image_path),
+                "gyro_visual_path": str(gyro_visual_path),
+                "cmf_visual_path": str(cmf_visual_path),
+                "stage2_visual_path": str(stage2_visual_path),
+                "output_path": str(output_path),
+            }
+            for gyro_idx, vector in enumerate(pred_gyro.numpy()):
+                row[f"pred_gyro{gyro_idx}_x"] = f"{vector[0]:.8f}"
+                row[f"pred_gyro{gyro_idx}_y"] = f"{vector[1]:.8f}"
+                row[f"pred_gyro{gyro_idx}_z"] = f"{vector[2]:.8f}"
+            rows.append(row)
+
+        fieldnames = (
+            list(rows[0].keys())
+            if rows
+            else [
+                "index",
+                "input_path",
+                "gyro_visual_path",
+                "cmf_visual_path",
+                "stage2_visual_path",
+                "output_path",
+            ]
+        )
+        save_csv(run_dir / "predictions.csv", rows, fieldnames)
+        save_json(
+            run_dir / "summary.json",
+            {
+                "stage1_config": str(Path(args.stage1_config))
+                if args.stage1_config
+                else None,
+                "stage1_config_source": stage1_config_source,
+                "stage1_checkpoint": args.stage1_checkpoint,
+                "stage2_config": str(Path(args.stage2_config))
+                if args.stage2_config
+                else None,
+                "stage2_config_source": stage2_config_source,
+                "stage2_checkpoint": args.stage2_checkpoint,
+                "input": args.input,
+                "saved": len(rows),
+                "load_report": load_report,
+                "camera_matrix": camera_matrix.tolist(),
+            },
+        )
+        print(f"saved: {run_dir}")
+        return
+
     split = args.split or stage2_cfg.get("validation", {}).get("split") or "val"
     _, loader = build_stage1_stage2_loader(
         stage1_cfg,
@@ -108,22 +290,15 @@ def main():
         load_target_gyro=False,
         default_dt=args.default_dt,
     )
-    stage1_model, stage2_model, load_report = load_stage1_stage2_models(
-        stage1_cfg,
-        stage2_cfg,
-        args.stage1_checkpoint,
-        args.stage2_checkpoint,
-        device=device,
-        strict_stage1=not args.non_strict_stage1,
-        strict_stage2=not args.non_strict_stage2,
-    )
 
     summary = MetricAverager(["psnr", "ssim"])
     rows = []
     saved = 0
     total_batches = len(loader)
     if args.limit is not None:
-        total_batches = min(total_batches, math.ceil(int(args.limit) / max(1, int(args.batch_size))))
+        total_batches = min(
+            total_batches, math.ceil(int(args.limit) / max(1, int(args.batch_size)))
+        )
 
     image_cfg = stage1_cfg.get("image", {})
     for batch in tqdm(loader, total=total_batches, desc="stage1->stage2 inference"):
@@ -209,26 +384,34 @@ def main():
         if args.limit is not None and saved >= int(args.limit):
             break
 
-    fieldnames = list(rows[0].keys()) if rows else [
-        "index",
-        "type",
-        "stem",
-        "psnr",
-        "ssim",
-        "gyro_visual_path",
-        "cmf_visual_path",
-        "stage2_visual_path",
-        "output_path",
-    ]
+    fieldnames = (
+        list(rows[0].keys())
+        if rows
+        else [
+            "index",
+            "type",
+            "stem",
+            "psnr",
+            "ssim",
+            "gyro_visual_path",
+            "cmf_visual_path",
+            "stage2_visual_path",
+            "output_path",
+        ]
+    )
     save_csv(run_dir / "predictions.csv", rows, fieldnames)
     save_json(
         run_dir / "summary.json",
         {
             "overall": summary.as_dict(),
-            "stage1_config": str(Path(args.stage1_config)) if args.stage1_config else None,
+            "stage1_config": str(Path(args.stage1_config))
+            if args.stage1_config
+            else None,
             "stage1_config_source": stage1_config_source,
             "stage1_checkpoint": args.stage1_checkpoint,
-            "stage2_config": str(Path(args.stage2_config)) if args.stage2_config else None,
+            "stage2_config": str(Path(args.stage2_config))
+            if args.stage2_config
+            else None,
             "stage2_config_source": stage2_config_source,
             "stage2_checkpoint": args.stage2_checkpoint,
             "dataset_root": stage2_cfg.get("dataset", {}).get("root"),
