@@ -82,6 +82,13 @@ weights/*
 *.tar.gz
 *.7z
 
+# Camera calibration sample images are part of the repository.
+camera_calibration/result/
+!camera_calibration/data/checkerboard_image/
+!camera_calibration/data/checkerboard_image/**
+!camera_calibration/data/undisroted_image/
+!camera_calibration/data/undisroted_image/**
+
 # Local conversion markers/backups
 *.body_axes_backup
 *.opencv_axes_done.txt
