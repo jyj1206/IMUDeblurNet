@@ -6,8 +6,8 @@ from a blurred image. The gyro window is converted into a camera motion field
 
 | Sharp Image | Blur Image | [NAFNet](https://github.com/megvii-research/nafnet) | [Restormer](https://github.com/swz30/Restormer) | IMUDeblur (ours) |
 | :---: | :---: | :---: | :---: | :---: |
-| ![Sharp image 1](assets/sharp_1.png) | ![Blur image 1](assets/blur_1.png) | ![NAFNet result 1](assets/nafnet_1.png) | ![Restormer result 1](assets/restormer_1.png) | ![IMUDeblur result 1](assets/ours_1.png) |
-| ![Sharp image 2](assets/sharp_2.png) | ![Blur image 2](assets/blur_2.png) | ![NAFNet result 2](assets/nafnet_2.png) | ![Restormer result 2](assets/restomrer_2.png) | ![IMUDeblur result 2](assets/ours_2.png) |
+| <img src="assets/sharp_1.png" alt="Sharp image 1" width="180" height="135"> | <img src="assets/blur_1.png" alt="Blur image 1" width="180" height="135"> | <img src="assets/nafnet_1.png" alt="NAFNet result 1" width="180" height="135"> | <img src="assets/restormer_1.png" alt="Restormer result 1" width="180" height="135"> | <img src="assets/ours_1.png" alt="IMUDeblur result 1" width="180" height="135"> |
+| <img src="assets/sharp_2.png" alt="Sharp image 2" width="180" height="135"> | <img src="assets/blur_2.png" alt="Blur image 2" width="180" height="135"> | <img src="assets/nafnet_2.png" alt="NAFNet result 2" width="180" height="135"> | <img src="assets/restomrer_2.png" alt="Restormer result 2" width="180" height="135"> | <img src="assets/ours_2.png" alt="IMUDeblur result 2" width="180" height="135"> |
 
 ## Table of Contents
 
