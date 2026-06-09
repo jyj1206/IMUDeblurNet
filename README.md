@@ -80,6 +80,8 @@ opencv-python==4.9.0.80
 PyYAML==6.0.2
 tqdm==4.67.1
 pyiqa==0.1.15.post2
+lpips==0.1.4
+matplotlib==3.10.9
 ```
 
 If CUDA 11.8 is not available, install a PyTorch build matching the target
@@ -189,11 +191,9 @@ Place datasets and checkpoints as follows.
 
 ```text
 data/
-+-- IMUBlur/
-|   +-- train/
-|   +-- val/
-|   `-- test/
-`-- IMURealBlur/
+`-- IMUBlur/
+    +-- train/
+    +-- val/
     `-- test/
 
 weights/
@@ -205,7 +205,7 @@ weights/
 
 The dataset and checkpoint files can be downloaded from Google Drive.
 
-- **IMUBlur / IMURealBlur datasets**: [Google Drive](https://drive.google.com/drive/folders/1Ttp6ytm7rvdYyj3hU1uZvi82c9a2f-hZ)
+- **IMUBlur dataset**: [Google Drive](https://drive.google.com/drive/folders/1Ttp6ytm7rvdYyj3hU1uZvi82c9a2f-hZ)
 - **Pretrained weights**: [Google Drive](https://drive.google.com/drive/folders/14-4GSpS8fip-zLHqwzkYziXM22RQbeRi)
 
 IMUBlur was captured with a GoPro HERO 13 action camera at 1080p
@@ -223,6 +223,10 @@ The commands below run validation checks and save `metrics.json`,
 The reproducibility check uses the default camera calibration values in the
 codebase, so explicit camera calibration arguments are omitted here.
 
+The quick start scripts under `scripts/` are bash scripts. Run them from Linux,
+WSL, or Git Bash on Windows. The equivalent `python ...` commands can be run
+directly from a terminal.
+
 ### Reproducibility Scope
 
 Full training is reproducible when the complete dataset, CMF files, pretrained
@@ -231,8 +235,6 @@ practical, the submitted checkpoints reproduce the reported validation and test
 results through the commands below.
 
 ### 1. Stage1
-
-IMUBlur:
 
 ```bash
 python validate_stage1.py \
@@ -247,27 +249,10 @@ bash scripts/IMUBlur/01_imublur_validate_stage1.sh
 ```
 This code validates Stage1 gyro prediction on IMUBlur.
 
-IMURealBlur:
-
-```bash
-python validate_stage1.py \
-  --checkpoint weights/best_stage1.pt \
-  --dataset-root data/IMURealBlur \
-  --split test
-```
-Quick start bash script:
-
-```bash
-bash scripts/IMURealBlur/01_imurealblur_validate_stage1.sh
-```
-This code validates Stage1 gyro prediction on IMURealBlur.
-
 ### 2. Stage2
 
 Stage2 uses precomputed CMF files. If the downloaded dataset does not already
 include `camera_motion_field/`, generate CMF before running Stage2 validation.
-
-IMUBlur CMF:
 
 ```bash
 python generate_camera_motion_field.py \
@@ -276,18 +261,6 @@ python generate_camera_motion_field.py \
   --overwrite
 ```
 This code generates 12-channel CMF files for the IMUBlur test split.
-
-IMURealBlur CMF:
-
-```bash
-python generate_camera_motion_field.py \
-  --data_root data/IMURealBlur \
-  --mode test \
-  --overwrite
-```
-This code generates 12-channel CMF files for the IMURealBlur test split.
-
-IMUBlur:
 
 ```bash
 python validate_stage2.py \
@@ -302,26 +275,7 @@ bash scripts/IMUBlur/02_imublur_validate_stage2.sh
 ```
 This code validates Stage2 deblurring on IMUBlur with precomputed CMF.
 
-IMURealBlur:
-
-```bash
-python validate_stage2.py \
-  --checkpoint weights/best_stage2.pt \
-  --dataset-root data/IMURealBlur \
-  --split test \
-  --allow-missing-gt \
-  --realblur-metrics
-```
-Quick start bash script:
-
-```bash
-bash scripts/IMURealBlur/02_imurealblur_validate_stage2.sh
-```
-This code validates Stage2 deblurring on IMURealBlur with no-reference metrics.
-
 ### 3. Stage1 + Stage2
-
-IMUBlur:
 
 ```bash
 python validate_stage1_stage2.py \
@@ -338,27 +292,7 @@ bash scripts/IMUBlur/03_imublur_validate_stage1_stage2.sh
 ```
 This code validates the non-fine-tuned Stage1 + Stage2 pipeline on IMUBlur.
 
-IMURealBlur:
-
-```bash
-python validate_stage1_stage2.py \
-  --stage1-checkpoint weights/best_stage1.pt \
-  --stage2-checkpoint weights/best_stage2.pt \
-  --dataset-root data/IMURealBlur \
-  --split test \
-  --allow-missing-gt \
-  --realblur-metrics
-```
-Quick start bash script:
-
-```bash
-bash scripts/IMURealBlur/03_imurealblur_validate_stage1_stage2.sh
-```
-This code validates the non-fine-tuned Stage1 + Stage2 pipeline on IMURealBlur.
-
 ### 4. Stage1 + Stage2 Fine-Tune
-
-IMUBlur:
 
 ```bash
 python validate_stage1_stage2_finetune.py \
@@ -373,23 +307,6 @@ Quick start bash script:
 bash scripts/IMUBlur/04_imublur_validate_stage1_stage2_finetune.sh
 ```
 This code validates the final fine-tuned model on IMUBlur.
-
-IMURealBlur:
-
-```bash
-python validate_stage1_stage2_finetune.py \
-  --checkpoint weights/best_finetuned.pt \
-  --dataset-root data/IMURealBlur \
-  --split test \
-  --allow-missing-gt \
-  --realblur-metrics
-```
-Quick start bash script:
-
-```bash
-bash scripts/IMURealBlur/04_imurealblur_validate_stage1_stage2_finetune.sh
-```
-This code validates the final fine-tuned model on IMURealBlur.
 
 ## Code Example
 ### Training Code
@@ -420,7 +337,7 @@ Fine-tune Stage1 + Stage2:
 
 ```bash
 python train_stage1_stage2_finetune.py \
-  --config config/stage1_stage2_finetune_freeze_stage1_fast_no_cmf_target_lr2e-6_50k.yaml
+  --config config/stage1_stage2_finetune.yaml
 ```
 This code fine-tunes the Stage1 + differentiable CMF + Stage2 pipeline.
 
@@ -430,8 +347,6 @@ Training outputs are saved under `result/`.
 
 Use the final fine-tuned checkpoint for the main validation numbers.
 
-IMUBlur:
-
 ```bash
 python validate_stage1_stage2_finetune.py \
   --checkpoint weights/best_finetuned.pt \
@@ -440,18 +355,6 @@ python validate_stage1_stage2_finetune.py \
   --load-target-gyro
 ```
 This code validates the final fine-tuned model on the IMUBlur validation split.
-
-IMURealBlur:
-
-```bash
-python validate_stage1_stage2_finetune.py \
-  --checkpoint weights/best_finetuned.pt \
-  --dataset-root data/IMURealBlur \
-  --split test \
-  --allow-missing-gt \
-  --realblur-metrics
-```
-This code validates the final fine-tuned model on IMURealBlur with no-reference metrics.
 
 Validation outputs are saved under `runs/`.
 
@@ -547,11 +450,9 @@ python inference_stage1_stage2_finetune.py \
 ```
 This code runs the final fine-tuned pipeline on all images directly inside the input folder.
 
-Inference outputs are written to `runs/<run_name>/outputs/`.
-
-For `IMURealBlur`, `--allow-missing-gt` allows evaluation without a sharp
-ground-truth image, and `--realblur-metrics` reports no-reference metrics
-(`niqe`, `topiq_nr`) instead of PSNR/SSIM.
+Inference outputs are written under `runs/<run_name>/`. Stage1-only inference
+saves gyro predictions to `predictions.csv` and visualizations to `visuals/`.
+Stage2 and Stage1 + Stage2 inference also save restored images to `outputs/`.
 
 ## AI Tool Usage
 
