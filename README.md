@@ -9,6 +9,17 @@ from a blurred image. The gyro window is converted into a camera motion field
 | - | - | - | - | - |
 | - | - | - | - | - |
 
+## Table of Contents
+
+- [Pipeline](#pipeline)
+- [Environment](#environment)
+- [Repository Layout](#repository-layout)
+- [Data and Weights](#data-and-weights)
+- [Quick Start: Reproducibility Check](#quick-start-reproducibility-check)
+- [Code Example](#code-example)
+- [AI Tool Usage](#ai-tool-usage)
+- [References](#references)
+
 ## Pipeline
 
 ```text
@@ -82,6 +93,8 @@ machine first, then install the remaining packages from `requirements.txt`.
 +-- models/                         # Stage1, Stage2, and CMF modules
 +-- utils/                          # Losses, metrics, logging, checkpoints
 +-- camera_calibration/             # Camera calibration helpers
++-- assets/                         # Images used in README
++-- scripts/                        # Dataset-specific bash quick starts
 +-- data/                           # Dataset root for large files
 +-- weights/                        # Pretrained checkpoints
 +-- result/                         # Training outputs
@@ -148,6 +161,11 @@ python validate_stage1.py \
   --dataset-root data/IMUBlur \
   --split test
 ```
+Quick start bash script:
+
+```bash
+bash scripts/IMUBlur/01_imublur_validate_stage1.sh
+```
 This code validates Stage1 gyro prediction on IMUBlur.
 
 IMURealBlur:
@@ -157,6 +175,11 @@ python validate_stage1.py \
   --checkpoint weights/best_stage1.pt \
   --dataset-root data/IMURealBlur \
   --split test
+```
+Quick start bash script:
+
+```bash
+bash scripts/IMURealBlur/01_imurealblur_validate_stage1.sh
 ```
 This code validates Stage1 gyro prediction on IMURealBlur.
 
@@ -193,6 +216,11 @@ python validate_stage2.py \
   --dataset-root data/IMUBlur \
   --split test
 ```
+Quick start bash script:
+
+```bash
+bash scripts/IMUBlur/02_imublur_validate_stage2.sh
+```
 This code validates Stage2 deblurring on IMUBlur with precomputed CMF.
 
 IMURealBlur:
@@ -204,6 +232,11 @@ python validate_stage2.py \
   --split test \
   --allow-missing-gt \
   --realblur-metrics
+```
+Quick start bash script:
+
+```bash
+bash scripts/IMURealBlur/02_imurealblur_validate_stage2.sh
 ```
 This code validates Stage2 deblurring on IMURealBlur with no-reference metrics.
 
@@ -219,6 +252,11 @@ python validate_stage1_stage2.py \
   --split test \
   --load-target-gyro
 ```
+Quick start bash script:
+
+```bash
+bash scripts/IMUBlur/03_imublur_validate_stage1_stage2.sh
+```
 This code validates the non-fine-tuned Stage1 + Stage2 pipeline on IMUBlur.
 
 IMURealBlur:
@@ -231,6 +269,11 @@ python validate_stage1_stage2.py \
   --split test \
   --allow-missing-gt \
   --realblur-metrics
+```
+Quick start bash script:
+
+```bash
+bash scripts/IMURealBlur/03_imurealblur_validate_stage1_stage2.sh
 ```
 This code validates the non-fine-tuned Stage1 + Stage2 pipeline on IMURealBlur.
 
@@ -245,6 +288,11 @@ python validate_stage1_stage2_finetune.py \
   --split test \
   --load-target-gyro
 ```
+Quick start bash script:
+
+```bash
+bash scripts/IMUBlur/04_imublur_validate_stage1_stage2_finetune.sh
+```
 This code validates the final fine-tuned model on IMUBlur.
 
 IMURealBlur:
@@ -256,6 +304,11 @@ python validate_stage1_stage2_finetune.py \
   --split test \
   --allow-missing-gt \
   --realblur-metrics
+```
+Quick start bash script:
+
+```bash
+bash scripts/IMURealBlur/04_imurealblur_validate_stage1_stage2_finetune.sh
 ```
 This code validates the final fine-tuned model on IMURealBlur.
 
