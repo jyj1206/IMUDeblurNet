@@ -14,6 +14,7 @@ from a blurred image. The gyro window is converted into a camera motion field
 - [Pipeline](#pipeline)
 - [Environment](#environment)
 - [Repository Layout](#repository-layout)
+- [Camera Calibration](#camera-calibration)
 - [Data and Weights](#data-and-weights)
 - [Quick Start: Reproducibility Check](#quick-start-reproducibility-check)
 - [Code Example](#code-example)
@@ -88,17 +89,17 @@ machine first, then install the remaining packages from `requirements.txt`.
 
 ```text
 .
++-- assets/                         # Images used in README
++-- camera_calibration/             # Camera calibration helpers
 +-- config/                         # Training and evaluation configs
++-- data/                           # Dataset root for large files
 +-- datasets/                       # Dataset loaders
 +-- models/                         # Stage1, Stage2, and CMF modules
-+-- utils/                          # Losses, metrics, logging, checkpoints
-+-- camera_calibration/             # Camera calibration helpers
-+-- assets/                         # Images used in README
-+-- scripts/                        # Dataset-specific bash quick starts
-+-- data/                           # Dataset root for large files
-+-- weights/                        # Pretrained checkpoints
 +-- result/                         # Training outputs
 +-- runs/                           # Evaluation and inference outputs
++-- scripts/                        # Dataset-specific bash quick starts
++-- utils/                          # Losses, metrics, logging, checkpoints
++-- weights/                        # Pretrained checkpoints
 +-- generate_camera_motion_field.py # Offline CMF generation
 +-- train_stage1.py
 +-- train_stage2.py
@@ -111,6 +112,75 @@ machine first, then install the remaining packages from `requirements.txt`.
 +-- inference_stage1_stage2.py
 +-- inference_image_stage1_stage2_finetune.py
 `-- validate_stage1_stage2_finetune.py
+```
+
+## Camera Calibration
+
+Camera intrinsics are used when gyro windows are converted into CMF. The camera
+matrix is
+
+```text
+K = [[fx, 0,  cx],
+     [0,  fy, cy],
+     [0,  0,  1 ]]
+```
+
+Stage1-only validation does not need `K`. Stage2-only validation uses
+precomputed CMF, so `K` must be set when generating CMF. Stage1 + Stage2 and
+fine-tuned Stage1 + Stage2 generate CMF during evaluation, so `K` can be passed
+directly to the validation script.
+
+Run checkerboard calibration:
+
+```bash
+python camera_calibration/calibration.py \
+  --input-dir <path_to_checkerboard_images> \
+  --output-dir result/calibration \
+  --board-size 8x6 \
+  --square-size <checkerboard_square_size>
+```
+
+The calibration report is saved under `result/calibration/`. Use the reported
+camera matrix values as `fx`, `fy`, `cx`, and `cy`.
+
+Generate CMF with a custom `K`:
+
+```bash
+python generate_camera_motion_field.py \
+  --data_root data/IMUBlur \
+  --mode test \
+  --camera-fx <fx> \
+  --camera-fy <fy> \
+  --camera-cx <cx> \
+  --camera-cy <cy> \
+  --overwrite
+```
+
+Validate Stage1 + Stage2 with a custom `K`:
+
+```bash
+python validate_stage1_stage2.py \
+  --stage1-checkpoint weights/best_stage1.pt \
+  --stage2-checkpoint weights/best_stage2.pt \
+  --dataset-root <dataset_root> \
+  --split test \
+  --camera-fx <fx> \
+  --camera-fy <fy> \
+  --camera-cx <cx> \
+  --camera-cy <cy>
+```
+
+Validate the fine-tuned Stage1 + Stage2 model with a custom `K`:
+
+```bash
+python validate_stage1_stage2_finetune.py \
+  --checkpoint weights/best_finetuned.pt \
+  --dataset-root <dataset_root> \
+  --split test \
+  --camera-fx <fx> \
+  --camera-fy <fy> \
+  --camera-cx <cx> \
+  --camera-cy <cy>
 ```
 
 ## Data and Weights
@@ -138,11 +208,20 @@ The dataset and checkpoint files can be downloaded from Google Drive.
 - **IMUBlur / IMURealBlur datasets**: [Google Drive](https://drive.google.com/drive/folders/1Ttp6ytm7rvdYyj3hU1uZvi82c9a2f-hZ)
 - **Pretrained weights**: [Google Drive](https://drive.google.com/drive/folders/14-4GSpS8fip-zLHqwzkYziXM22RQbeRi)
 
+IMUBlur was captured with a GoPro HERO 13 action camera at 1080p
+resolution (`1920 x 1080`).
+
+For Stage1 training, download the SegNeXt backbone checkpoint from the
+Getting Started section of [jerredchen/image-as-an-imu](https://github.com/jerredchen/image-as-an-imu)
+and place it at `weights/segnext_iaai.pth`.
 
 ## Quick Start: Reproducibility Check
 
 The commands below run validation checks and save `metrics.json`,
 `samples.csv`, and visual outputs under `runs/`.
+
+The reproducibility check uses the default camera calibration values in the
+codebase, so explicit camera calibration arguments are omitted here.
 
 ### Reproducibility Scope
 
