@@ -1,7 +1,7 @@
 experiment:
-  name: stage1_exp24_regularized_gradclip_only
+  name: stage1_training
   result_root: result
-  run_prefix: stage1_exp24_gradclip_only
+  run_prefix: stage1
   output_dir: null
 dataset:
   root: data/IMUBlur

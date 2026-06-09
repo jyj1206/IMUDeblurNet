@@ -1,7 +1,7 @@
 experiment:
-  name: stage1_stage2_finetune_freeze_stage1_100k
+  name: stage1_stage2_finetuning
   result_root: result
-  run_prefix: stage1_stage2_ft_freeze_stage1_100k
+  run_prefix: stage1_stage2_finetune
   output_dir: null
 dataset:
   root: data/IMUBlur

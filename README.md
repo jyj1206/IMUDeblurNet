@@ -110,7 +110,7 @@ machine first, then install the remaining packages from `requirements.txt`.
 +-- inference_stage1.py
 +-- inference_stage2.py
 +-- inference_stage1_stage2.py
-+-- inference_image_stage1_stage2_finetune.py
++-- inference_stage1_stage2_finetune.py
 `-- validate_stage1_stage2_finetune.py
 ```
 
@@ -530,7 +530,7 @@ This code predicts gyro, generates CMF, and restores all images directly inside 
 Stage1 + Stage2 fine-tuned single image file:
 
 ```bash
-python inference_image_stage1_stage2_finetune.py \
+python inference_stage1_stage2_finetune.py \
   --checkpoint weights/best_finetuned.pt \
   --input <path_to_blur_image.png> \
   --save-visuals
@@ -540,7 +540,7 @@ This code runs the final fine-tuned pipeline on one blurred image file.
 Stage1 + Stage2 fine-tuned image folder:
 
 ```bash
-python inference_image_stage1_stage2_finetune.py \
+python inference_stage1_stage2_finetune.py \
   --checkpoint weights/best_finetuned.pt \
   --input <path_to_blur_image_folder> \
   --save-visuals
