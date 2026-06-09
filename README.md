@@ -242,7 +242,7 @@ python validate_stage1.py \
   --dataset-root data/IMUBlur \
   --split test
 ```
-Quick start bash script:
+**Quick start bash script:**
 
 ```bash
 bash scripts/IMUBlur/01_imublur_validate_stage1.sh
@@ -268,7 +268,7 @@ python validate_stage2.py \
   --dataset-root data/IMUBlur \
   --split test
 ```
-Quick start bash script:
+**Quick start bash script:**
 
 ```bash
 bash scripts/IMUBlur/02_imublur_validate_stage2.sh
@@ -285,7 +285,7 @@ python validate_stage1_stage2.py \
   --split test \
   --load-target-gyro
 ```
-Quick start bash script:
+**Quick start bash script:**
 
 ```bash
 bash scripts/IMUBlur/03_imublur_validate_stage1_stage2.sh
@@ -301,7 +301,7 @@ python validate_stage1_stage2_finetune.py \
   --split test \
   --load-target-gyro
 ```
-Quick start bash script:
+**Quick start bash script:**
 
 ```bash
 bash scripts/IMUBlur/04_imublur_validate_stage1_stage2_finetune.sh
@@ -311,7 +311,9 @@ This code validates the final fine-tuned model on IMUBlur.
 ## Code Example
 ### Training Code
 
-Generate CMF files before Stage2 training. Stage1 training does not need CMF,
+#### Generate CMF
+
+Stage1 training does not need CMF,
 but Stage2 training reads precomputed CMF files from the dataset directory.
 
 ```bash
@@ -319,21 +321,21 @@ python generate_camera_motion_field.py --data_root data/IMUBlur --mode all --ove
 ```
 This code generates 12-channel CMF files from gyro windows.
 
-Train Stage1:
+#### Train Stage1
 
 ```bash
 python train_stage1.py --config config/stage1.yaml
 ```
 This code trains Stage1 blur-to-gyro prediction.
 
-Train Stage2:
+#### Train Stage2
 
 ```bash
 python train_stage2.py --config config/stage2_deblur.yaml
 ```
 This code trains Stage2 deblurring with precomputed CMF.
 
-Fine-tune Stage1 + Stage2:
+#### Fine-Tune Stage1 + Stage2
 
 ```bash
 python train_stage1_stage2_finetune.py \
@@ -360,7 +362,7 @@ Validation outputs are saved under `runs/`.
 
 ### Inference Code Example
 
-Stage1 single image file:
+#### Stage1 Single Image File
 
 ```bash
 python inference_stage1.py \
@@ -369,7 +371,7 @@ python inference_stage1.py \
 ```
 This code predicts a gyro window from one blurred image file.
 
-Stage1 image folder:
+#### Stage1 Image Folder
 
 ```bash
 python inference_stage1.py \
@@ -377,6 +379,8 @@ python inference_stage1.py \
   --input <path_to_blur_image_folder>
 ```
 This code predicts gyro windows for all images directly inside the input folder.
+
+#### Generate CMF for Stage2
 
 Stage2-only inference needs a precomputed CMF. For dataset images, generate CMF
 first if it is not already included. For an arbitrary single image, provide a
@@ -390,7 +394,7 @@ python generate_camera_motion_field.py \
 ```
 This code prepares CMF files for Stage2-only inference on IMUBlur test images.
 
-Stage2 single image file:
+#### Stage2 Single Image File
 
 ```bash
 python inference_stage2.py \
@@ -400,7 +404,7 @@ python inference_stage2.py \
 ```
 This code restores one blurred image using a precomputed CMF file.
 
-Stage2 image folder:
+#### Stage2 Image Folder
 
 ```bash
 python inference_stage2.py \
@@ -410,7 +414,7 @@ python inference_stage2.py \
 ```
 This code restores all images directly inside the input folder using matching CMF files.
 
-Stage1 + Stage2 single image file:
+#### Stage1 + Stage2 Single Image File
 
 ```bash
 python inference_stage1_stage2.py \
@@ -420,7 +424,7 @@ python inference_stage1_stage2.py \
 ```
 This code predicts gyro, generates CMF, and restores one blurred image.
 
-Stage1 + Stage2 image folder:
+#### Stage1 + Stage2 Image Folder
 
 ```bash
 python inference_stage1_stage2.py \
@@ -430,7 +434,7 @@ python inference_stage1_stage2.py \
 ```
 This code predicts gyro, generates CMF, and restores all images directly inside the input folder.
 
-Stage1 + Stage2 fine-tuned single image file:
+#### Stage1 + Stage2 Fine-Tuned Single Image File
 
 ```bash
 python inference_stage1_stage2_finetune.py \
@@ -440,7 +444,7 @@ python inference_stage1_stage2_finetune.py \
 ```
 This code runs the final fine-tuned pipeline on one blurred image file.
 
-Stage1 + Stage2 fine-tuned image folder:
+#### Stage1 + Stage2 Fine-Tuned Image Folder
 
 ```bash
 python inference_stage1_stage2_finetune.py \
