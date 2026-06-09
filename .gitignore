@@ -83,7 +83,10 @@ weights/*
 *.7z
 
 # Camera calibration sample images are part of the repository.
-camera_calibration/result/
+camera_calibration/result/*
+!camera_calibration/result/calibration/
+camera_calibration/result/calibration/*
+!camera_calibration/result/calibration/calibration_results.txt
 !camera_calibration/data/checkerboard_image/
 !camera_calibration/data/checkerboard_image/**
 !camera_calibration/data/undisroted_image/
