@@ -69,6 +69,7 @@ weights/*
 *.avi
 *.mkv
 *.png
+!assets/*.png
 *.jpg
 *.jpeg
 *.bmp
